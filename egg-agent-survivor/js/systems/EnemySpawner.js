@@ -133,6 +133,7 @@
       this.eventFired = false;
       this.eventAt = MathUtils.randRange(0.35, 0.7);
       this.boss = null;
+      this.finalBoss = null;
       this.totalSpawned = 0;
     }
 
@@ -163,6 +164,7 @@
     get timeToNextWave() { return WAVE_DURATION - this.waveTime; }
     get isBossWave() { return this.wave % BOSS_EVERY === 0; }
     get bossAlive() { return !!(this.boss && !this.boss.dead); }
+    get finalBossAlive() { return !!(this.finalBoss && !this.finalBoss.dead); }
 
     /** 精英出现概率随波次上升，封顶 18% */
     eliteChance() { return Math.min(0.18, Math.max(0, (this.wave - 4) * 0.014)); }
@@ -206,12 +208,13 @@
      * @param {number} x
      * @param {number} y
      * @param {string} typeKey
-     * @param {object} [options] { elite, healthMul }
+     * @param {object} [options] { elite, healthMul, force }
+     *   force  无视同屏上限（最终 Boss 等剧情级刷怪必须成功）
      */
     spawnAt(x, y, typeKey, options) {
       const engine = this.engine;
       if (!engine || !engine.player) return null;
-      if (engine.countByTag('enemy') >= HARD_CAP) return null;
+      if (!(options && options.force) && engine.countByTag('enemy') >= HARD_CAP) return null;
 
       const enemy = new global.Enemy(x, y, typeKey, this.wave, options || {});
       engine.add(enemy);
@@ -225,6 +228,9 @@
     }
 
     spawnBoss() {
+      // 最终 Boss 在场时不再叠加常规 Boss：终局战必须是一对一的舞台
+      if (this.finalBossAlive) return;
+
       const point = this.edgePoint(1.05);
       // Boss 血量随出场轮次额外倍增，避免后期被瞬间融掉
       const round = this.wave / BOSS_EVERY;
@@ -238,6 +244,27 @@
       this.engine.camera.addTrauma(0.7);
       this.engine.events.emit('wave:boss', boss);
       if (this.engine.audio) this.engine.audio.play('bossSpawn');
+    }
+
+    /**
+     * 召唤最终 Boss（15 分钟通关战的守门人），由 main.js 的胜利流程触发。
+     * 与常规 Boss 共用血条与屏外指示，但只出现一次。
+     * @returns {Enemy|null}
+     */
+    spawnFinalBoss() {
+      if (this.finalBoss) return this.finalBoss;
+
+      const point = this.edgePoint(1.05);
+      const boss = this.spawnAt(point.x, point.y, 'finalBoss', { force: true });
+      if (!boss) return null;
+
+      this.finalBoss = boss;
+      this.boss = boss;
+      this.announce(this.engine, `${boss.def.name} 降临`, '⚠ FINAL BOSS');
+      this.engine.camera.addTrauma(1);
+      this.engine.events.emit('wave:finalBoss', boss);
+      if (this.engine.audio) this.engine.audio.play('bossSpawn');
+      return boss;
     }
 
     announce(engine, text, tag) {

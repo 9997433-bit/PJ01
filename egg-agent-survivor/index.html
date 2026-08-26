@@ -129,6 +129,10 @@
         <span class="menu__best-value" id="menu-best">--:--</span>
       </div>
 
+      <!-- 角色选择：4 张卡由 main.js 按 Player.CHARACTERS 渲染，数据只有一处来源 -->
+      <p class="menu__roster-label">选择特工</p>
+      <div id="character-select" class="roster" role="group" aria-label="选择特工"></div>
+
       <button id="btn-start" class="btn btn--primary btn--hero" type="button">
         <span class="btn__chevron" aria-hidden="true"></span>
         <span class="btn__label">开始任务</span>
@@ -144,7 +148,7 @@
         <li><kbd>ESC</kbd><span>暂停</span></li>
         <li><kbd>触摸</kbd><span>拖动屏幕即摇杆</span></li>
       </ul>
-      <p class="menu__hint">武器全自动开火 · 你只需要活下来</p>
+      <p class="menu__hint">撑过 15 分钟并击败最终 Boss 即可通关 · 武器全自动开火</p>
       </div>
 
       <!-- 角色预览台：画的是真正的 Player 实体，不是另做一张贴图 -->
@@ -171,6 +175,13 @@
     <div class="dialog">
       <h2 class="dialog__title">任务暂停</h2>
       <p class="dialog__text">系统待机中，特工请就位。</p>
+
+      <!-- 进化图鉴：暂停时由 UpgradeSystem.renderRecipes 渲染全部配方与进度 -->
+      <div class="recipes-panel">
+        <p class="recipes-panel__label">武器进化配方 · 两把满级武器合而为一</p>
+        <div id="evolution-recipes" class="recipes"></div>
+      </div>
+
       <div class="dialog__actions">
         <button id="btn-resume" class="btn btn--primary" type="button"><span>继续</span><em>ESC</em></button>
         <button id="btn-quit" class="btn btn--ghost" type="button"><span>放弃任务</span></button>
@@ -250,6 +261,52 @@
     </div>
   </section>
 
+  <!-- ===== 胜利结算 ===== -->
+  <section id="screen-victory" class="screen">
+    <div class="dialog dialog--victory">
+      <p class="dialog__eyebrow">MISSION COMPLETE</p>
+      <h2 class="dialog__title">任务完成</h2>
+      <p class="dialog__text">15 分钟坚守成功，最终 Boss 已被歼灭。</p>
+
+      <div class="grade">
+        <span class="grade__badge" id="victory-grade" data-grade="C">C</span>
+        <span class="grade__title" id="victory-grade-title">见习特工</span>
+      </div>
+
+      <div class="results">
+        <div class="result">
+          <span class="result__value" id="victory-time">15:00</span>
+          <span class="result__label">通关时间</span>
+        </div>
+        <div class="result">
+          <span class="result__value" id="victory-level">1</span>
+          <span class="result__label">达到等级</span>
+        </div>
+        <div class="result">
+          <span class="result__value" id="victory-kills">0</span>
+          <span class="result__label">击杀数</span>
+        </div>
+        <div class="result">
+          <span class="result__value" id="victory-combo">0</span>
+          <span class="result__label">最高连击</span>
+        </div>
+        <div class="result">
+          <span class="result__value" id="victory-score">0</span>
+          <span class="result__label">总得分</span>
+        </div>
+        <div class="result result--best">
+          <span class="result__value" id="victory-character">—</span>
+          <span class="result__label">出战特工</span>
+        </div>
+      </div>
+
+      <div class="dialog__actions">
+        <button id="btn-victory-again" class="btn btn--primary" type="button"><span>再战一局</span><em>ENTER</em></button>
+        <button id="btn-victory-menu" class="btn btn--ghost" type="button"><span>返回主菜单</span></button>
+      </div>
+    </div>
+  </section>
+
   <div id="boot-error" class="boot-error"></div>
   <div id="fever-overlay" class="fever-overlay" aria-hidden="true"></div>
   <div class="scanlines" aria-hidden="true"></div>
@@ -279,6 +336,7 @@
 <script src="js/systems/CollisionSystem.js"></script>
 <script src="js/systems/WeaponSystem.js"></script>
 <script src="js/systems/EnemySpawner.js"></script>
+<!-- UpgradeSystem 定义进化武器并注册进 WeaponSystem.WEAPONS，必须后于武器表加载 -->
 <script src="js/systems/UpgradeSystem.js"></script>
 <!-- ElementFusion 装饰 WeaponSystem 与 UpgradeSystem 的方法，必须排在两者之后 -->
 <script src="js/systems/ElementFusion.js"></script>
@@ -290,6 +348,7 @@
 <script src="js/ui/BuildOverview.js"></script>
 <script src="js/ui/MenuStage.js"></script>
 <script src="js/ui/OffscreenIndicator.js"></script>
+<script src="js/ui/VictoryScreen.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
