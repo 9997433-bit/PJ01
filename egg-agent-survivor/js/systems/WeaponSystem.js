@@ -692,10 +692,7 @@
       if (combo) combo.pendingSource = null;
 
       if (juice && dealt > 0 && !options.silent) {
-        juice.damageNumber(enemy.position.x, enemy.position.y - enemy.radius - 6, dealt, {
-          critical: options.critical,
-          kill: enemy.dead,
-        });
+        juice.hit(enemy, dealt, { critical: options.critical, kill: enemy.dead });
       }
 
       weapon.damageDealt += dealt;

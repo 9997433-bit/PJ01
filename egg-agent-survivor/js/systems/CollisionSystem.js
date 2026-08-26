@@ -240,10 +240,7 @@
 
           if (combo) combo.pendingSource = null;
           if (juice && dealt > 0) {
-            juice.damageNumber(enemy.position.x, enemy.position.y - enemy.radius - 6, dealt, {
-              critical: p.critical,
-              kill: enemy.dead,
-            });
+            juice.hit(enemy, dealt, { critical: p.critical, kill: enemy.dead });
           }
 
           if (p.burn) enemy.applyBurn(p.burn.dps, p.burn.duration);

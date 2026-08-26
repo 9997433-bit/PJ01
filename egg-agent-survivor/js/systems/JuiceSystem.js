@@ -119,6 +119,27 @@
       });
     }
 
+    /**
+     * 单次命中的完整反馈：飘字 + 溅射火花。
+     * 武器直伤与弹道命中都走这里，Enemy 自带的那份反馈会被调用方关掉，
+     * 免得同一下打出两组数字。
+     */
+    hit(enemy, amount, options = {}) {
+      if (!this.enabled || amount <= 0) return;
+      const x = enemy.position.x;
+      const y = enemy.position.y;
+      this.damageNumber(x, y - enemy.radius - 6, amount, options);
+
+      const particles = this.engine.particles;
+      if (particles.activeCount / particles.capacity > 0.85) return;
+      const accent = enemy.def ? enemy.def.accent : '#ffffff';
+      particles.burst(x, y, options.critical ? 9 : 4, {
+        colors: [accent, '#ffffff'],
+        speedMin: 50, speedMax: 200, lifeMin: 0.1, lifeMax: 0.28,
+        sizeMin: 2, sizeMax: 4, shape: 'spark',
+      });
+    }
+
     /** 连击提示字，跟着档位配色一起弹出来 */
     comboPopup(x, y, text, color) {
       if (!this.enabled) return;
