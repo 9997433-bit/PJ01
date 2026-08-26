@@ -100,8 +100,7 @@
       const on = (el, handler) => el.addEventListener('click', () => {
         el.blur();
         // 每次点击都顺手解锁音频：浏览器只在用户手势里允许 resume
-        this.audio.unlock();
-        this.audio.play('uiClick');
+        this.audio.unlock('uiClick');
         handler();
       });
 
@@ -346,8 +345,12 @@
   function loadAudioPrefs() {
     const prefs = { volume: 0.75, muted: false };
     try {
-      const volume = Number(localStorage.getItem('eas:volume'));
-      if (Number.isFinite(volume) && volume >= 0 && volume <= 1) prefs.volume = volume;
+      // 没存过时 getItem 返回 null，而 Number(null) 是 0 —— 直接用就等于默认静音了
+      const stored = localStorage.getItem('eas:volume');
+      if (stored !== null && stored !== '') {
+        const volume = Number(stored);
+        if (Number.isFinite(volume) && volume >= 0 && volume <= 1) prefs.volume = volume;
+      }
       prefs.muted = localStorage.getItem('eas:muted') === '1';
     } catch (_) { /* 忽略，用默认值 */ }
     return prefs;

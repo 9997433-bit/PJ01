@@ -262,6 +262,31 @@ test('未解锁（上下文 suspended）时不排任何声音', () => {
   assert.ok(ctx.log.started > 0);
 });
 
+test('unlock 可以补播一声：resume 是异步的，手势当下 play() 会被丢掉', async () => {
+  const { AudioManager } = loadAudioManager();
+  let ctx = null;
+  const manager = new AudioManager({
+    AudioContext: function () { ctx = createFakeAudioContext(); return ctx; },
+    autoUnlock: false,
+  });
+
+  assert.equal(manager.play('uiClick'), false, '解锁前直接播会被丢掉');
+  manager.unlock('uiClick');
+  assert.equal(manager.stats.played, 0, 'resume 尚未完成时不应当已经发声');
+
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(ctx.state, 'running');
+  assert.equal(manager.stats.played, 1, 'resume 完成后应当补播那一声');
+});
+
+test('已解锁时 unlock 的补播立即生效', () => {
+  const { manager } = createRunningManager();
+  manager.unlock('uiSelect');
+  assert.equal(manager.stats.played, 1);
+});
+
 test('autoUnlock 在首次手势后解锁并摘掉监听', () => {
   const { AudioManager, documentStub } = loadAudioManager();
   let ctx = null;

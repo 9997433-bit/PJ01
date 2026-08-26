@@ -498,15 +498,31 @@
       return this.ctx;
     }
 
-    /** 首次用户手势时调用；浏览器的自动播放策略要求上下文在手势里被 resume */
-    unlock() {
+    /**
+     * 首次用户手势时调用；浏览器的自动播放策略要求上下文在手势里被 resume。
+     *
+     * @param {string} [soundAfterUnlock] 解锁完成后补播的音效。resume 是异步的，
+     *   手势当下 play() 看到的还是 suspended 状态 —— 直接播会被丢掉，
+     *   所以「点开始按钮的那一声」必须挂在 resume 的回调上。
+     */
+    unlock(soundAfterUnlock) {
       const ctx = this._ensureContext();
-      if (!ctx) return false;
-      if (ctx.state === 'suspended' && ctx.resume) {
-        const result = ctx.resume();
-        if (result && typeof result.catch === 'function') result.catch(() => {});
+      if (!ctx || ctx.state === 'closed') return false;
+
+      const fire = () => {
+        if (soundAfterUnlock) this.play(soundAfterUnlock, { force: true });
+      };
+
+      if (ctx.state === 'running') {
+        fire();
+        return true;
       }
-      return ctx.state !== 'closed';
+      if (ctx.resume) {
+        const result = ctx.resume();
+        if (result && typeof result.then === 'function') result.then(fire, () => {});
+        else fire();
+      }
+      return true;
     }
 
     /** 在 document 上挂一次性手势监听，任何一种交互都能解锁 */
