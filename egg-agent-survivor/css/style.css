@@ -353,6 +353,20 @@ kbd {
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 .icon-btn:hover { background: rgba(124, 249, 255, 0.16); border-color: var(--cyan); }
+.icon-btn__glyph {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--cyan);
+  text-shadow: 0 0 10px rgba(124, 249, 255, 0.6);
+}
+.icon-btn.is-off { border-color: rgba(255, 77, 109, 0.4); }
+.icon-btn.is-off .icon-btn__glyph {
+  color: var(--pink);
+  text-shadow: 0 0 10px rgba(255, 77, 109, 0.55);
+}
+.icon-btn.is-off:hover { background: rgba(255, 77, 109, 0.16); border-color: var(--pink); }
 .icon-btn__bars {
   width: 12px; height: 14px;
   border-left: 4px solid var(--cyan);
@@ -429,6 +443,149 @@ kbd {
 .panel--dash.is-ready .dash__label { color: var(--violet); text-shadow: 0 0 12px rgba(183, 139, 255, 0.7); }
 .panel--dash.is-ready { border-color: rgba(183, 139, 255, 0.5); }
 .panel--dash.is-ready::before { border-color: var(--violet); }
+
+/* --- 连击表 --- */
+
+/* 脱离 hud__top 栅格独立定位，横竖屏切换时不参与重排。
+   档位配色由 HUD.js 写入 --combo-color，CSS 只管形状与动画。 */
+.combo {
+  --combo-color: var(--cyan);
+  position: absolute;
+  top: 34%;
+  right: calc(18px + var(--safe-right));
+  width: 148px;
+  padding: 10px 12px 9px;
+  text-align: right;
+  background: linear-gradient(200deg, rgba(11, 18, 34, 0.72), rgba(7, 11, 22, 0.5));
+  border: 1px solid color-mix(in srgb, var(--combo-color) 34%, transparent);
+  border-right-width: 3px;
+  border-radius: var(--radius-s);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  transform: translateX(14px);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.25s var(--ease-out), border-color 0.25s ease;
+}
+
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  .combo { border-color: var(--line); }
+}
+
+.combo.is-active { opacity: 1; transform: none; }
+
+.combo__count { display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; }
+.combo__value {
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 900;
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 0 18px var(--combo-color);
+  font-variant-numeric: tabular-nums;
+}
+.combo__mult {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--combo-color);
+  text-shadow: 0 0 12px var(--combo-color);
+}
+.combo__label {
+  margin-top: 2px;
+  font-size: 9px;
+  letter-spacing: 0.26em;
+  color: var(--text-faint);
+}
+
+/* 上面一条是连击窗口倒计时，下面一条是 Fever 充能 */
+.combo__track,
+.combo__fever-track {
+  height: 4px;
+  margin-top: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.combo__fill,
+.combo__fever-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 99px;
+}
+.combo__fill {
+  background: var(--combo-color);
+  box-shadow: 0 0 10px var(--combo-color);
+  /* 窗口每次击杀都要瞬间回满，只在缩短时补一点缓动 */
+  transition: width 0.12s linear;
+}
+.combo__fever { display: flex; align-items: center; gap: 7px; }
+.combo__fever-track { flex: 1; }
+.combo__fever-fill {
+  background: linear-gradient(90deg, var(--gold), var(--pink));
+  box-shadow: 0 0 10px rgba(255, 77, 109, 0.6);
+  transition: width 0.18s ease;
+}
+.combo__fever-label {
+  font-size: 8px;
+  letter-spacing: 0.16em;
+  color: var(--text-faint);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.combo.is-fever {
+  border-color: var(--pink);
+  box-shadow: 0 0 26px rgba(255, 77, 109, 0.45);
+  animation: combo-fever-bob 0.6s ease-in-out infinite;
+}
+.combo.is-fever .combo__label,
+.combo.is-fever .combo__fever-label { color: var(--gold); }
+
+@keyframes combo-fever-bob {
+  0%, 100% { transform: none; }
+  50% { transform: translateY(-3px) scale(1.03); }
+}
+
+/* --- Fever 模式全屏视觉 --- */
+
+/* 边框脉冲：一层不吃事件的描边，跟画布的色调偏移一起构成 Fever 的整屏语言 */
+.fever-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 18;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 212, 94, 0.75),
+    inset 0 0 46px rgba(255, 77, 109, 0.42),
+    inset 0 0 140px rgba(255, 77, 109, 0.24);
+}
+.fever-overlay.is-active { opacity: 1; animation: fever-pulse 0.72s ease-in-out infinite; }
+
+@keyframes fever-pulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 0 2px rgba(255, 212, 94, 0.55),
+      inset 0 0 40px rgba(255, 77, 109, 0.3),
+      inset 0 0 120px rgba(255, 77, 109, 0.16);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 4px rgba(255, 212, 94, 0.95),
+      inset 0 0 70px rgba(255, 77, 109, 0.6),
+      inset 0 0 190px rgba(255, 77, 109, 0.34);
+  }
+}
+
+/* 色调偏移只作用在画布上：整屏偏暖偏艳，但 HUD 文字保持原色可读 */
+body.is-fever #game-canvas {
+  filter: hue-rotate(-16deg) saturate(1.32) contrast(1.06) brightness(1.04);
+  transition: filter 0.4s ease;
+}
+body.is-fever .timer,
+body.is-fever .stat__value { color: var(--gold); }
 
 /* --- 横幅 --- */
 
@@ -970,6 +1127,19 @@ kbd {
 
 #hud[data-layout="compact"] .dash__track,
 #hud[data-layout="portrait"] .dash__track { min-width: 42px; }
+
+/* 小屏把连击表压扁并上移，避开摇杆区与画布上的波次进度条 */
+#hud[data-layout="compact"] .combo,
+#hud[data-layout="portrait"] .combo {
+  top: auto;
+  bottom: calc(14px + var(--safe-bottom));
+  width: 108px;
+  padding: 6px 8px;
+}
+#hud[data-layout="compact"] .combo__value,
+#hud[data-layout="portrait"] .combo__value { font-size: 24px; }
+#hud[data-layout="compact"] .combo__label,
+#hud[data-layout="portrait"] .combo__label { display: none; }
 
 @media (max-width: 860px) {
   .cards { grid-template-columns: 1fr; gap: 12px; }

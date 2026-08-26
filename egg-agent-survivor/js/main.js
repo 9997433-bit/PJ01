@@ -20,6 +20,10 @@
       this.engine.background = new global.Background();
       this.engine.player = null;
 
+      // 音效先于一切系统就位：Enemy / Weapon / Collision 都会直接调 engine.audio
+      this.audio = new global.AudioManager(loadAudioPrefs());
+      this.audio.attach(this.engine);
+
       // 顺序即执行顺序：碰撞系统先重建敌人网格，武器与刷怪才能查询到最新战场
       this.collisions = this.engine.addSystem(new global.CollisionSystem());
       this.weaponSystem = this.engine.addSystem(new global.WeaponSystem());
@@ -27,6 +31,13 @@
       this.upgrades = this.engine.addSystem(new global.UpgradeSystem({
         weapons: this.weaponSystem,
       }));
+
+      // 反馈层排在战斗系统之后：这一帧的击杀先结算完，再决定怎么演。
+      // ComboSystem 必须早于 JuiceSystem 注册，否则击杀爆炸读到的是上一档倍率。
+      this.combo = this.engine.addSystem(new global.ComboSystem());
+      this.juice = this.engine.addSystem(new global.JuiceSystem());
+      // 屏外指示器最后注册，drawScreen 才会盖在 Boss 血条与波次条之上
+      this.indicators = this.engine.addSystem(new global.OffscreenIndicator());
 
       this.hud = new global.HUD(this.engine);
       this.engine.hud = this.hud;
@@ -64,6 +75,8 @@
         resultTime: byId('result-time'),
         resultLevel: byId('result-level'),
         resultKills: byId('result-kills'),
+        resultCombo: byId('result-combo'),
+        resultScore: byId('result-score'),
         resultBest: byId('result-best'),
         menuBest: byId('menu-best'),
         btnStart: byId('btn-start'),
@@ -72,10 +85,13 @@
         btnRetry: byId('btn-retry'),
         btnMenu: byId('btn-menu'),
         btnPause: byId('btn-pause'),
+        btnMute: byId('btn-mute'),
+        muteGlyph: byId('mute-glyph'),
         btnReroll: byId('btn-reroll'),
         rerollCount: byId('reroll-count'),
       };
       this._renderBest();
+      this._renderMute();
     }
 
     _bindUi() {
@@ -83,6 +99,9 @@
       // 点完立刻失焦，否则空格/回车会重复触发这颗按钮
       const on = (el, handler) => el.addEventListener('click', () => {
         el.blur();
+        // 每次点击都顺手解锁音频：浏览器只在用户手势里允许 resume
+        this.audio.unlock();
+        this.audio.play('uiClick');
         handler();
       });
 
@@ -92,7 +111,31 @@
       on(d.btnRetry, () => this.startRun());
       on(d.btnMenu, () => this.toMenu());
       on(d.btnPause, () => this.engine.togglePause());
+      if (d.btnMute) on(d.btnMute, () => this.toggleMute());
       if (d.btnReroll) on(d.btnReroll, () => this._rerollCards());
+    }
+
+    /* ================= 音效 ================= */
+
+    toggleMute() {
+      const muted = this.audio.toggleMute();
+      try {
+        localStorage.setItem('eas:muted', muted ? '1' : '0');
+      } catch (_) { /* 隐私模式下 localStorage 可能不可用 */ }
+      this._renderMute();
+      // 取消静音时给一声确认，否则玩家不确定是否真的开了
+      if (!muted) this.audio.play('uiSelect');
+      return muted;
+    }
+
+    _renderMute() {
+      const { btnMute, muteGlyph } = this.dom;
+      const muted = this.audio.muted;
+      if (muteGlyph) muteGlyph.textContent = muted ? '✕' : '♪';
+      if (btnMute) {
+        btnMute.classList.toggle('is-off', muted);
+        btnMute.setAttribute('aria-pressed', muted ? 'true' : 'false');
+      }
     }
 
     _bindEngineEvents() {
@@ -216,6 +259,7 @@
 
     _chooseUpgrade(upgrade) {
       const engine = this.engine;
+      this.audio.play('uiSelect');
       this.upgrades.apply(upgrade, this._upgradeContext());
 
       engine.particles.shockwave(engine.player.position.x, engine.player.position.y, {
@@ -239,6 +283,8 @@
       this.dom.resultTime.textContent = MathUtils.formatTime(engine.elapsed);
       this.dom.resultLevel.textContent = player.level;
       this.dom.resultKills.textContent = player.kills;
+      if (this.dom.resultCombo) this.dom.resultCombo.textContent = this.combo.best;
+      if (this.dom.resultScore) this.dom.resultScore.textContent = this.combo.score;
 
       if (engine.elapsed > this.bestTime) {
         this.bestTime = engine.elapsed;
@@ -269,6 +315,8 @@
         if (engine.isState(GameState.PLAYING, GameState.PAUSED)) engine.togglePause();
       }
 
+      if (input.wasPressed('mute')) this.toggleMute();
+
       if (engine.state === GameState.MENU && input.wasPressed('confirm')) {
         this.startRun();
       }
@@ -292,6 +340,17 @@
 
       if (engine.state !== GameState.MENU) this.hud.update(dt);
     }
+  }
+
+  /** 音量与静音偏好；隐私模式下 localStorage 会抛错，静默退回默认值 */
+  function loadAudioPrefs() {
+    const prefs = { volume: 0.75, muted: false };
+    try {
+      const volume = Number(localStorage.getItem('eas:volume'));
+      if (Number.isFinite(volume) && volume >= 0 && volume <= 1) prefs.volume = volume;
+      prefs.muted = localStorage.getItem('eas:muted') === '1';
+    } catch (_) { /* 忽略，用默认值 */ }
+    return prefs;
   }
 
   const boot = () => {

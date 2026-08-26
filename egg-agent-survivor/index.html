@@ -51,9 +51,26 @@
           <span class="stat__value" id="fps-value">60</span>
           <span class="stat__label">FPS</span>
         </div>
+        <button id="btn-mute" class="icon-btn" type="button" aria-label="音效开关" aria-pressed="false">
+          <span class="icon-btn__glyph" id="mute-glyph">♪</span>
+        </button>
         <button id="btn-pause" class="icon-btn" type="button" aria-label="暂停">
           <span class="icon-btn__bars"></span>
         </button>
+      </div>
+    </div>
+
+    <!-- 连击表：脱离 hud__top 的栅格，横竖屏都不用重排 -->
+    <div id="combo-meter" class="combo" aria-hidden="true">
+      <div class="combo__count">
+        <span class="combo__value" id="combo-value">0</span>
+        <span class="combo__mult" id="combo-mult">×1</span>
+      </div>
+      <div class="combo__label" id="combo-label">COMBO</div>
+      <div class="combo__track"><div class="combo__fill" id="combo-fill"></div></div>
+      <div class="combo__fever">
+        <div class="combo__fever-track"><div class="combo__fever-fill" id="combo-fever-fill"></div></div>
+        <span class="combo__fever-label" id="combo-fever-label">FEVER</span>
       </div>
     </div>
 
@@ -104,6 +121,8 @@
       <ul class="controls">
         <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>移动</span></li>
         <li><kbd>SHIFT</kbd><span>相位冲刺</span></li>
+        <li><kbd>E</kbd><span>Boss 处决</span></li>
+        <li><kbd>M</kbd><span>音效开关</span></li>
         <li><kbd>ESC</kbd><span>暂停</span></li>
         <li><kbd>触摸</kbd><span>拖动屏幕即摇杆</span></li>
       </ul>
@@ -158,6 +177,14 @@
           <span class="result__value" id="result-kills">0</span>
           <span class="result__label">击杀数</span>
         </div>
+        <div class="result">
+          <span class="result__value" id="result-combo">0</span>
+          <span class="result__label">最高连击</span>
+        </div>
+        <div class="result">
+          <span class="result__value" id="result-score">0</span>
+          <span class="result__label">总得分</span>
+        </div>
         <div class="result result--best">
           <span class="result__value" id="result-best">00:00</span>
           <span class="result__label">历史最佳</span>
@@ -171,6 +198,7 @@
   </section>
 
   <div id="boot-error" class="boot-error"></div>
+  <div id="fever-overlay" class="fever-overlay" aria-hidden="true"></div>
   <div class="scanlines" aria-hidden="true"></div>
 </div>
 
@@ -190,13 +218,19 @@
 <script src="js/entities/XpGem.js"></script>
 <script src="js/entities/Enemy.js"></script>
 <!-- 系统层：CollisionSystem 必须先于武器与刷怪注册，它负责重建战斗查询网格 -->
+<!-- AudioManager 无依赖，但必须先于所有会调用 engine.audio 的系统就位 -->
+<script src="js/systems/AudioManager.js"></script>
 <script src="js/systems/Background.js"></script>
 <script src="js/systems/CollisionSystem.js"></script>
 <script src="js/systems/WeaponSystem.js"></script>
 <script src="js/systems/EnemySpawner.js"></script>
 <script src="js/systems/UpgradeSystem.js"></script>
+<!-- 反馈层：ComboSystem 必须先于 JuiceSystem 注册，击杀爆炸要读到已更新的连击档位 -->
+<script src="js/systems/ComboSystem.js"></script>
+<script src="js/systems/JuiceSystem.js"></script>
 <!-- 界面与入口 -->
 <script src="js/ui/HUD.js"></script>
+<script src="js/ui/OffscreenIndicator.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

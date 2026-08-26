@@ -35,13 +35,30 @@
         dash: document.getElementById('dash-indicator'),
         dashFill: document.getElementById('dash-fill'),
         wave: document.getElementById('wave-banner'),
+        combo: document.getElementById('combo-meter'),
+        comboValue: document.getElementById('combo-value'),
+        comboMult: document.getElementById('combo-mult'),
+        comboLabel: document.getElementById('combo-label'),
+        comboFill: document.getElementById('combo-fill'),
+        comboFeverFill: document.getElementById('combo-fever-fill'),
+        comboFeverLabel: document.getElementById('combo-fever-label'),
+        feverOverlay: document.getElementById('fever-overlay'),
       };
       this._cache = {};
       this._fpsTimer = 0;
       this._layout = null;
+      this._fever = false;
 
       engine.events.on('player:damaged', () => this._flashDamage());
       engine.events.on('wave:elite', () => this.showBanner('精英目标出现', '警告'));
+
+      // Fever 的整屏视觉靠 class 驱动，用事件而不是每帧 toggle，
+      // 免得 CSS 动画被反复重置。回主菜单时必须强制熄灭。
+      engine.events.on('fever:start', () => this._setFever(true));
+      engine.events.on('fever:end', () => this._setFever(false));
+      engine.events.on('state:change', ({ to }) => {
+        if (to === global.GameState.MENU) this._setFever(false);
+      });
 
       this._onViewportChange = () => this._syncLayout();
       global.addEventListener('resize', this._onViewportChange);
@@ -149,6 +166,15 @@
       element.style.width = pct;
     }
 
+    /** 色调偏移挂在 body 上，画布与整套界面一起进入 Fever */
+    _setFever(on) {
+      if (this._fever === on) return;
+      this._fever = on;
+      if (this.el.combo) this.el.combo.classList.toggle('is-fever', on);
+      if (this.el.feverOverlay) this.el.feverOverlay.classList.toggle('is-active', on);
+      if (document.body) document.body.classList.toggle('is-fever', on);
+    }
+
     _flashDamage() {
       if (!this.el.root) return;
       this.el.root.classList.remove('is-hurt');
@@ -190,10 +216,46 @@
       this._setWidth('dash', this.el.dashFill, MathUtils.clamp(ratio, 0, 1));
       if (this.el.dash) this.el.dash.classList.toggle('is-ready', ready);
 
+      this._updateCombo();
+
       this._fpsTimer += dt;
       if (this._fpsTimer > 0.35) {
         this._fpsTimer = 0;
         this._set('fps', this.el.fps, Math.round(engine.fps));
+      }
+    }
+
+    /**
+     * 连击表。ComboSystem 没装载时整块隐藏，HUD 不该假设它一定在。
+     * 档位配色写成内联变量，CSS 只负责形状与动画。
+     */
+    _updateCombo() {
+      const el = this.el;
+      if (!el.combo) return;
+
+      const combo = this.engine.combo;
+      const snapshot = combo ? combo.snapshot() : null;
+      const active = !!snapshot && (snapshot.count > 0 || snapshot.fever);
+
+      el.combo.classList.toggle('is-active', active);
+      if (!snapshot) return;
+
+      this._set('comboValue', el.comboValue, snapshot.count);
+      this._set('comboMult', el.comboMult, `×${snapshot.multiplier}`);
+      this._set('comboLabel', el.comboLabel, snapshot.fever ? 'FEVER MODE' : snapshot.label);
+      this._setWidth('comboFill', el.comboFill, snapshot.timeRatio);
+      this._setWidth(
+        'comboFever',
+        el.comboFeverFill,
+        snapshot.fever ? snapshot.feverRatio : snapshot.feverProgress
+      );
+      this._set('comboFeverLabel', el.comboFeverLabel, snapshot.fever
+        ? `FEVER ${Math.ceil(snapshot.feverTimeLeft)}s`
+        : `FEVER ${snapshot.count}/${snapshot.feverAt}`);
+
+      if (this._cache.comboColor !== snapshot.color) {
+        this._cache.comboColor = snapshot.color;
+        this._setCssProperty(el.combo, '--combo-color', snapshot.color);
       }
     }
 
