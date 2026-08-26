@@ -134,7 +134,7 @@ try {
   addCheck(
     'package.json defines a development server',
     typeof devCommand === 'string'
-      && /(http\.server|\bserve\b)/.test(devCommand),
+      && /(http\.server|\bserve\b|dev-server\.sh)/.test(devCommand),
     typeof devCommand === 'string' ? `dev: ${devCommand}` : 'scripts.dev is missing',
   );
 } catch (error) {
