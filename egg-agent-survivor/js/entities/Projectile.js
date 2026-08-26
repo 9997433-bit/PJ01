@@ -1,159 +1,250 @@
 /**
- * Projectile — 弹幕
- * 支持穿透（每个目标只结算一次）、暴击与拖尾。
+ * Projectile — 通用弹道（玩家与敌人共用）
  *
- * 构造支持两种签名：
- *   new Projectile(x, y, direction, options)
- *   new Projectile({ x, y, angle|direction|velocity, ...options })
- * 后者供外部战斗系统按配置对象生成弹丸。
+ * 一个类覆盖所有弹道形态，用 kind 切换运动与绘制：
+ *   bolt      直线飞行，可追踪、可穿透
+ *   knife     直线投掷，带自旋
+ *   boomerang 飞出后回旋返回，对同一目标有独立的重复命中冷却
+ *   orb       缓慢发光的能量球（敌人弹幕也用它）
+ *
+ * 命中判定在 CollisionSystem 里做；这里只负责运动、命中记账与绘制。
+ * 穿透去重用 Set 记录已命中目标，回旋镖则记录命中时刻做冷却。
  */
 (function (global) {
   'use strict';
 
-  const Vector2 = global.Vector2;
   const MathUtils = global.MathUtils;
-
-  function resolveDirection(source) {
-    if (!source) return Vector2.right();
-    if (typeof source.angle === 'number') return Vector2.fromAngle(source.angle);
-    if (source.direction) return new Vector2(source.direction.x, source.direction.y).normalizeSelf();
-    if (source.velocity) return new Vector2(source.velocity.x, source.velocity.y).normalizeSelf();
-    if (typeof source.x === 'number' && typeof source.y === 'number') {
-      return new Vector2(source.x, source.y).normalizeSelf();
-    }
-    return Vector2.right();
-  }
+  const TAU = Math.PI * 2;
+  const MAX_TRAIL = 7;
 
   class Projectile extends global.Entity {
-    constructor(x, y, direction, options = {}) {
-      let config = options;
-      let originX = x;
-      let originY = y;
-      let dir = direction;
-
-      // 单参数配置对象形式
-      if (x !== null && typeof x === 'object') {
-        config = x;
-        originX = config.x || 0;
-        originY = config.y || 0;
-        dir = resolveDirection(config);
-      } else {
-        dir = resolveDirection(direction);
-      }
-
-      super(originX, originY, {
-        radius: config.radius || 6,
+    /**
+     * @param {object} config
+     *   x, y, angle, speed, damage, radius
+     *   kind        'bolt' | 'knife' | 'boomerang' | 'orb'
+     *   faction     'player' | 'enemy'
+     *   pierce      可额外穿透的敌人数
+     *   life        存活秒数
+     *   knockback   击退强度
+     *   critical    是否暴击
+     *   homing      追踪转向速度（弧度/秒），0 关闭
+     *   color
+     *   burn        { dps, duration }
+     *   slow        { mult, duration }
+     *   onHit(projectile, enemy, engine)
+     *   owner       回旋镖的归属实体
+     *   returnAfter 回旋镖开始返回的时间
+     *   weaponId    来源武器（用于伤害统计）
+     */
+    constructor(config = {}) {
+      super(config.x || 0, config.y || 0, {
+        radius: config.radius !== undefined ? config.radius : 6,
         tag: 'projectile',
         layer: global.Layer.PROJECTILE,
       });
 
-      this.speed = config.speed || 540;
-      this.velocity.copy(dir.scale(this.speed));
-      this.damage = config.damage || 10;
-      this.pierce = config.pierce || 0;
-      this.lifetime = config.life !== undefined ? config.life : (config.lifetime || 1.6);
-      this.knockback = config.knockback !== undefined ? config.knockback : 210;
-      this.color = config.color || '#7cf9ff';
+      this.angle = config.angle || 0;
+      this.speed = config.speed !== undefined ? config.speed : 420;
+      this.velocity.set(Math.cos(this.angle) * this.speed, Math.sin(this.angle) * this.speed);
 
-      this.faction = config.faction || 'player';
       this.kind = config.kind || 'bolt';
-      this.owner = config.owner || null;
-      this.weaponId = config.weaponId || null;
-
-      // 外部系统已经掷过暴击的，就不要再掷一次
+      this.faction = config.faction || 'player';
+      this.damage = config.damage !== undefined ? config.damage : 10;
+      this.pierce = config.pierce || 0;
+      this.life = config.life !== undefined ? config.life : 2.2;
+      this.maxLife = this.life;
+      this.knockback = config.knockback || 0;
       this.critical = !!config.critical;
-      this.critChance = config.critical !== undefined ? 0 : (config.critChance || 0);
+      this.homing = config.homing || 0;
+      this.color = config.color || '#ffe066';
+      this.burn = config.burn || null;
+      this.slow = config.slow || null;
+      this.onHit = config.onHit || null;
+      this.weaponId = config.weaponId || null;
+      this.spin = config.spin !== undefined ? config.spin : (this.kind === 'knife' ? 18 : 0);
+      this.rotation = 0;
+      /** 每次穿透后的伤害衰减系数 */
+      this.pierceFalloff = config.pierceFalloff !== undefined ? config.pierceFalloff : 1;
 
-      this._hitIds = new Set();
-      this._trailTimer = 0;
-    }
+      this.owner = config.owner || null;
+      this.returnAfter = config.returnAfter || 0.55;
+      this.returning = false;
+      this.reHitDelay = config.reHitDelay || 0.35;
 
-    /** 供外部碰撞系统查询：该目标是否还能被本弹丸命中 */
-    canHit(target) {
-      return !this.dead && !this._hitIds.has(target.id);
-    }
-
-    /**
-     * 登记一次命中并消耗穿透次数。
-     * @returns {boolean} true 表示弹丸已耗尽，应当销毁
-     */
-    registerHit(target) {
-      this._hitIds.add(target.id);
-      if (this.pierce <= 0) return true;
-      this.pierce--;
-      return false;
+      this.target = null;
+      this.hitSet = new Set();
+      this.hitTimes = new Map();
+      this.trail = [];
     }
 
     update(dt, engine) {
       this.age += dt;
-      this.lifetime -= dt;
-      if (this.lifetime <= 0) { this.dead = true; return; }
+      this.life -= dt;
+      if (this.life <= 0) { this.dead = true; return; }
+
+      if (this.kind === 'boomerang') this._updateBoomerang(dt, engine);
+      else this._updateLinear(dt, engine);
 
       this.position.addScaledSelf(this.velocity, dt);
+      this.rotation += this.spin * dt;
 
-      this._trailTimer -= dt;
-      if (this._trailTimer <= 0) {
-        this._trailTimer = 0.02;
-        engine.particles.emit({
-          x: this.position.x, y: this.position.y,
-          vx: -this.velocity.x * 0.1, vy: -this.velocity.y * 0.1,
-          life: 0.22, size: this.radius * 0.85, color: this.color, drag: 0.8,
-        });
+      if (this.kind !== 'boomerang') {
+        this.trail.push(this.position.x, this.position.y);
+        if (this.trail.length > MAX_TRAIL * 2) this.trail.splice(0, 2);
       }
 
-      // 存在外部碰撞系统时交出判定权，避免同一次命中被结算两遍
-      if (engine.combat || engine.collision) return;
-
-      const candidates = engine.grid.query(this.position, this.radius + 30);
-      for (let i = 0; i < candidates.length; i++) {
-        const target = candidates[i];
-        if (target.tag !== 'enemy' || target.dead || !this.canHit(target)) continue;
-        const reach = this.radius + target.radius;
-        if (this.position.distanceSqTo(target.position) > reach * reach) continue;
-
-        const critical = this.critical || Math.random() < this.critChance;
-        const damage = this.damage * (critical && !this.critical ? 2 : 1);
-        target.takeDamage(damage, {
-          critical,
-          knockback: this.knockback,
-          direction: this.velocity,
-        });
-
-        engine.particles.burst(this.position.x, this.position.y, critical ? 12 : 6, {
-          colors: critical ? ['#ffd45e', '#ffffff'] : [this.color, '#ffffff'],
-          speedMin: 60, speedMax: 240, lifeMin: 0.15, lifeMax: 0.35,
-          shape: 'spark', angle: this.velocity.angle(), spread: Math.PI,
-        });
-        if (critical) engine.camera.addTrauma(0.09);
-
-        if (this.registerHit(target)) { this.dead = true; return; }
+      // 飞得太远就回收，避免脱离战场的弹道一直占用实体槽位
+      const player = engine.player;
+      if (player && this.position.distanceSqTo(player.position) > 2400 * 2400) {
+        this.dead = true;
       }
     }
 
+    _updateLinear(dt, engine) {
+      if (this.homing <= 0 || this.faction !== 'player') return;
+
+      if (!this.target || this.target.dead) {
+        const combat = engine.combat;
+        this.target = combat ? combat.nearestEnemy(this.position.x, this.position.y, 460) : null;
+      }
+      if (!this.target || this.target.dead) return;
+
+      const want = Math.atan2(
+        this.target.position.y - this.position.y,
+        this.target.position.x - this.position.x
+      );
+      let diff = want - this.angle;
+      while (diff > Math.PI) diff -= TAU;
+      while (diff < -Math.PI) diff += TAU;
+
+      this.angle += MathUtils.clamp(diff, -this.homing * dt, this.homing * dt);
+      this.velocity.set(Math.cos(this.angle) * this.speed, Math.sin(this.angle) * this.speed);
+    }
+
+    _updateBoomerang(dt, engine) {
+      const owner = this.owner || engine.player;
+      if (!owner) { this.dead = true; return; }
+
+      if (!this.returning && this.age >= this.returnAfter) this.returning = true;
+
+      if (this.returning) {
+        const want = Math.atan2(
+          owner.position.y - this.position.y,
+          owner.position.x - this.position.x
+        );
+        let diff = want - this.angle;
+        while (diff > Math.PI) diff -= TAU;
+        while (diff < -Math.PI) diff += TAU;
+        this.angle += MathUtils.clamp(diff, -9 * dt, 9 * dt);
+        this.speed = Math.min(this.speed + 640 * dt, 940);
+        // 回到手上就收回
+        if (this.position.distanceTo(owner.position) < owner.radius + this.radius) {
+          this.dead = true;
+        }
+      } else {
+        // 飞出阶段持续减速，形成抛物线般的手感
+        this.speed = Math.max(this.speed - 540 * dt, 60);
+      }
+      this.velocity.set(Math.cos(this.angle) * this.speed, Math.sin(this.angle) * this.speed);
+    }
+
+    /* ================= 命中记账 ================= */
+
+    /** 该敌人当前是否可被本发弹道命中 */
+    canHit(enemy, now) {
+      if (this.kind === 'boomerang') {
+        const last = this.hitTimes.get(enemy);
+        return last === undefined || now - last >= this.reHitDelay;
+      }
+      return !this.hitSet.has(enemy);
+    }
+
+    /** 记录一次命中；返回 true 表示弹道应当销毁 */
+    registerHit(enemy, now) {
+      if (this.kind === 'boomerang') {
+        this.hitTimes.set(enemy, now);
+        return false;
+      }
+      this.hitSet.add(enemy);
+      this.damage *= this.pierceFalloff;
+      if (this.pierce > 0) { this.pierce--; return false; }
+      return true;
+    }
+
+    /* ================= 渲染 ================= */
+
     draw(ctx) {
-      const angle = this.velocity.angle();
+      if (this.trail.length >= 4) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = this.radius * 1.15;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(this.trail[0], this.trail[1]);
+        for (let i = 2; i < this.trail.length; i += 2) ctx.lineTo(this.trail[i], this.trail[i + 1]);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       ctx.save();
       ctx.translate(this.position.x, this.position.y);
-      ctx.rotate(angle);
-      ctx.globalCompositeOperation = 'lighter';
+      ctx.shadowColor = this.color;
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = this.color;
 
-      const len = this.radius * 3.2;
-      const gradient = ctx.createLinearGradient(-len, 0, this.radius, 0);
-      gradient.addColorStop(0, 'rgba(124,249,255,0)');
-      gradient.addColorStop(1, this.color);
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.moveTo(-len, -this.radius * 0.45);
-      ctx.lineTo(this.radius, 0);
-      ctx.lineTo(-len, this.radius * 0.45);
-      ctx.closePath();
-      ctx.fill();
+      switch (this.kind) {
+        case 'knife': {
+          ctx.rotate(this.rotation);
+          ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(this.radius * 1.9, 0);
+          ctx.lineTo(-this.radius * 0.5, this.radius * 0.75);
+          ctx.lineTo(-this.radius * 1.1, 0);
+          ctx.lineTo(-this.radius * 0.5, -this.radius * 0.75);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          break;
+        }
+        case 'boomerang': {
+          ctx.rotate(this.rotation);
+          ctx.strokeStyle = this.color;
+          ctx.lineWidth = this.radius * 0.66;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.arc(0, 0, this.radius * 1.3, 0.5, 0.5 + Math.PI * 1.15);
+          ctx.stroke();
+          break;
+        }
+        case 'orb': {
+          const pulse = 1 + Math.sin(this.age * 12) * 0.12;
+          const r = this.radius * 1.7 * pulse;
+          const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+          gradient.addColorStop(0, '#ffffff');
+          gradient.addColorStop(0.35, this.color);
+          gradient.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.arc(0, 0, r, 0, TAU);
+          ctx.fill();
+          break;
+        }
+        default: {
+          ctx.rotate(this.angle);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, this.radius * 1.9, this.radius * 0.8, 0, 0, TAU);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.ellipse(this.radius * 0.6, 0, this.radius * 0.6, this.radius * 0.3, 0, 0, TAU);
+          ctx.fill();
+        }
+      }
 
-      ctx.fillStyle = '#ffffff';
-      ctx.globalAlpha = 0.9 + Math.sin(this.age * 30) * 0.1;
-      ctx.beginPath();
-      ctx.arc(0, 0, this.radius * 0.62, 0, Math.PI * 2);
-      ctx.fill();
       ctx.restore();
     }
   }
