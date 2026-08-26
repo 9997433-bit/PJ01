@@ -170,8 +170,8 @@ body {
   border-radius: 10px;
   cursor: pointer;
   overflow: hidden;
-  backdrop-filter: blur(10px) saturate(140%);
-  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  /* 这里不加 backdrop-filter：按钮全都长在 .dialog / .menu 这些已经磨过一层
+     玻璃的容器里，再嵌一层看不出差别，却要多付一次全屏合成。 */
   transition:
     transform var(--dur-1) var(--ease-spring),
     box-shadow var(--dur-2) var(--ease-out),
@@ -788,10 +788,12 @@ body.is-fever .stat__value { color: var(--gold); }
   to { opacity: 1; transform: none; }
 }
 
+/* 92vh 这一项是为矮横屏加的：不封顶的话这团 760px 的装饰光会把
+   overflow-y:auto 的界面撑出一条根本没内容的滚动条。 */
 .screen__glow {
   position: absolute;
-  width: min(760px, 92vw);
-  height: min(760px, 92vw);
+  width: min(760px, 92vw, 92vh);
+  height: min(760px, 92vw, 92vh);
   border-radius: 50%;
   background: radial-gradient(circle, rgba(124, 249, 255, 0.14), transparent 62%);
   filter: blur(24px);
@@ -987,6 +989,9 @@ body.is-fever .stat__value { color: var(--gold); }
   font-size: 16px;
   letter-spacing: 0.18em;
   border-radius: 12px;
+  /* 唯一直接压在画布上的按钮，这层玻璃值得付；菜单里也没有战斗在跑 */
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
   animation: hero-breathe 3.2s var(--ease-in-out) infinite;
 }
 .btn--hero .btn__label { position: relative; z-index: 1; }
