@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05070f">
+<meta name="description" content="EGG AGENT SURVIVOR — 霓虹风格的蛋型特工幸存者游戏">
+<title>EGG AGENT SURVIVOR · 蛋型特工幸存者</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cellipse cx='16' cy='18' rx='10' ry='13' fill='%23eaf7ff' stroke='%237cf9ff' stroke-width='2'/%3E%3Cellipse cx='16' cy='17' rx='7' ry='3.4' fill='%23101a2c'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-state="menu">
+
+<div id="viewport">
+  <canvas id="game-canvas"></canvas>
+
+  <!-- ===== 移动端虚拟摇杆 ===== -->
+  <div id="joystick" aria-hidden="true">
+    <div class="joystick__ring"></div>
+    <div id="joystick-knob"></div>
+  </div>
+
+  <!-- ===== 抬头显示 ===== -->
+  <div id="hud" class="is-hidden">
+    <div class="hud__top">
+      <div class="panel panel--level">
+        <div class="level-badge">
+          <span class="level-badge__label">LV</span>
+          <span class="level-badge__value" id="level-value">1</span>
+        </div>
+        <div class="xp">
+          <div class="xp__track"><div class="xp__fill" id="xp-fill"></div></div>
+          <span class="xp__label">EXPERIENCE</span>
+        </div>
+      </div>
+
+      <div class="panel panel--timer">
+        <span class="timer" id="timer-value">00:00</span>
+        <span class="timer__label">SURVIVAL TIME</span>
+      </div>
+
+      <div class="panel panel--stats">
+        <div class="stat">
+          <span class="stat__value" id="kills-value">0</span>
+          <span class="stat__label">击杀</span>
+        </div>
+        <div class="stat stat--muted">
+          <span class="stat__value" id="fps-value">60</span>
+          <span class="stat__label">FPS</span>
+        </div>
+        <button id="btn-pause" class="icon-btn" type="button" aria-label="暂停">
+          <span class="icon-btn__bars"></span>
+        </button>
+      </div>
+    </div>
+
+    <div id="wave-banner" class="wave-banner"></div>
+
+    <div class="hud__bottom">
+      <div class="panel panel--health">
+        <div class="health">
+          <div class="health__track">
+            <div class="health__fill" id="health-fill"></div>
+            <div class="health__grid"></div>
+          </div>
+          <div class="health__meta">
+            <span class="health__label">HULL</span>
+            <span class="health__text" id="health-text">100 / 100</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel panel--dash" id="dash-indicator">
+        <div class="dash__track"><div class="dash__fill" id="dash-fill"></div></div>
+        <span class="dash__label">DASH · SHIFT</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 主菜单 ===== -->
+  <section id="screen-menu" class="screen is-visible">
+    <div class="screen__glow"></div>
+    <div class="menu">
+      <p class="menu__eyebrow">NEON PROTOCOL · 001</p>
+      <h1 class="title">
+        <span class="title__line title__line--main">EGG AGENT</span>
+        <span class="title__line title__line--sub">SURVIVOR</span>
+      </h1>
+      <p class="menu__tagline">你是最后一枚未破壳的特工。撑住，越久越好。</p>
+
+      <div class="menu__best">
+        <span class="menu__best-label">最佳生存</span>
+        <span class="menu__best-value" id="menu-best">--:--</span>
+      </div>
+
+      <button id="btn-start" class="btn btn--primary" type="button">
+        <span>开始任务</span>
+        <em>ENTER</em>
+      </button>
+
+      <ul class="controls">
+        <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>移动</span></li>
+        <li><kbd>SHIFT</kbd><span>相位冲刺</span></li>
+        <li><kbd>ESC</kbd><span>暂停</span></li>
+        <li><kbd>触摸</kbd><span>拖动屏幕即摇杆</span></li>
+      </ul>
+      <p class="menu__hint">武器全自动开火 · 你只需要活下来</p>
+    </div>
+  </section>
+
+  <!-- ===== 暂停 ===== -->
+  <section id="screen-pause" class="screen">
+    <div class="dialog">
+      <h2 class="dialog__title">任务暂停</h2>
+      <p class="dialog__text">系统待机中，特工请就位。</p>
+      <div class="dialog__actions">
+        <button id="btn-resume" class="btn btn--primary" type="button"><span>继续</span><em>ESC</em></button>
+        <button id="btn-quit" class="btn btn--ghost" type="button"><span>放弃任务</span></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 升级选择 ===== -->
+  <section id="screen-levelup" class="screen screen--levelup">
+    <div class="levelup">
+      <p class="levelup__eyebrow">LEVEL UP</p>
+      <h2 class="levelup__title">等级 <span id="levelup-level">2</span> · 选择强化</h2>
+      <div id="upgrade-cards" class="cards"></div>
+      <div class="levelup__actions">
+        <button id="btn-reroll" class="btn btn--ghost" type="button">
+          <span>重随三选一</span><em>R · 剩 <span id="reroll-count">1</span></em>
+        </button>
+      </div>
+      <p class="levelup__hint">
+        点击卡片或按 <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 选择 · 右键卡片可将其永久移出本局卡池
+      </p>
+    </div>
+  </section>
+
+  <!-- ===== 结算 ===== -->
+  <section id="screen-gameover" class="screen">
+    <div class="dialog dialog--danger">
+      <p class="dialog__eyebrow">MISSION FAILED</p>
+      <h2 class="dialog__title">蛋壳已碎</h2>
+      <div class="results">
+        <div class="result">
+          <span class="result__value" id="result-time">00:00</span>
+          <span class="result__label">生存时间</span>
+        </div>
+        <div class="result">
+          <span class="result__value" id="result-level">1</span>
+          <span class="result__label">达到等级</span>
+        </div>
+        <div class="result">
+          <span class="result__value" id="result-kills">0</span>
+          <span class="result__label">击杀数</span>
+        </div>
+        <div class="result result--best">
+          <span class="result__value" id="result-best">00:00</span>
+          <span class="result__label">历史最佳</span>
+        </div>
+      </div>
+      <div class="dialog__actions">
+        <button id="btn-retry" class="btn btn--primary" type="button"><span>再来一局</span><em>ENTER</em></button>
+        <button id="btn-menu" class="btn btn--ghost" type="button"><span>返回主菜单</span></button>
+      </div>
+    </div>
+  </section>
+
+  <div id="boot-error" class="boot-error"></div>
+  <div class="scanlines" aria-hidden="true"></div>
+</div>
+
+<!-- 工具层 -->
+<script src="js/utils/Vector2.js"></script>
+<script src="js/utils/ParticleSystem.js"></script>
+<script src="js/utils/InputManager.js"></script>
+<script src="js/utils/Camera.js"></script>
+<!-- 引擎层 -->
+<script src="js/engine/EventBus.js"></script>
+<script src="js/engine/SpatialGrid.js"></script>
+<script src="js/engine/GameEngine.js"></script>
+<!-- 实体层 -->
+<script src="js/entities/Entity.js"></script>
+<script src="js/entities/Player.js"></script>
+<script src="js/entities/Projectile.js"></script>
+<script src="js/entities/XpGem.js"></script>
+<script src="js/entities/Enemy.js"></script>
+<!-- 系统层：CollisionSystem 必须先于武器与刷怪注册，它负责重建战斗查询网格 -->
+<script src="js/systems/Background.js"></script>
+<script src="js/systems/CollisionSystem.js"></script>
+<script src="js/systems/WeaponSystem.js"></script>
+<script src="js/systems/EnemySpawner.js"></script>
+<script src="js/systems/UpgradeSystem.js"></script>
+<!-- 界面与入口 -->
+<script src="js/ui/HUD.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
