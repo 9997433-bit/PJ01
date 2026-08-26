@@ -88,8 +88,13 @@
       this.playIntro();
     }
 
+    /** 用户要求减少动效时直接跳到待机态，不播成型序列 */
+    static prefersReducedMotion() {
+      return !!(global.matchMedia && global.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    }
+
     playIntro() {
-      this.intro = INTRO_DURATION;
+      this.intro = MenuStage.prefersReducedMotion() ? 0 : INTRO_DURATION;
       this.time = 0;
       if (this.actor) {
         this.actor._bobPhase = 0;

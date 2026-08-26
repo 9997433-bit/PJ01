@@ -2013,11 +2013,15 @@ body.is-fever .stat__value { color: var(--gold); }
   .menu__best { margin-bottom: 16px; }
   .dialog, .levelup { margin: auto; }
 
-  /* 矮横屏（手机横握）：回到左右分栏，预览台按可用高度收缩 */
+  /* 矮横屏（手机横握）：回到左右分栏，预览台按可用高度收缩。
+     宽度收成 fit-content，否则 1fr 会把文案和预览台顶到两侧贴边，
+     中间空出一大块，两栏读起来不像一组。 */
   .menu {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 20px;
+    width: fit-content;
+    max-width: 100%;
   }
   .menu__info { align-items: flex-start; text-align: left; }
   .stage { order: 0; gap: 8px; }
@@ -2034,6 +2038,8 @@ body.is-fever .stat__value { color: var(--gold); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
+    /* 延迟也要清零：菜单入场是 fill:both 的，留着 delay 会让文案先空白 0.9 秒 */
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
