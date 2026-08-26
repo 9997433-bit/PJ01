@@ -183,8 +183,19 @@
       return this.weapons || (this.engine && this.engine.weapons) || null;
     }
 
+    /**
+     * 卡面文案与 apply 都会直接读写 areaMultiplier / critChance 这类扩展属性，
+     * 而它们由 WeaponSystem 在首帧补齐。这里先兜一次底，
+     * 避免「首帧之前就升级」时把属性算成 NaN。
+     */
+    _ensureStats() {
+      const player = this.engine && this.engine.player;
+      if (player && global.WeaponSystem) global.WeaponSystem.ensureCombatStats(player);
+    }
+
     /** 组装当前所有可选项 */
     buildPool() {
+      this._ensureStats();
       const pool = [];
       const weapons = this._weaponSystem();
       if (!weapons) return pool;
@@ -287,6 +298,7 @@
      * @param {object} context { player, engine, weapons }
      */
     apply(card, context) {
+      this._ensureStats();
       const ctx = context || this.context();
       card.apply(ctx);
       this.stacks.set(card.id, this.getStacks(card.id) + 1);
