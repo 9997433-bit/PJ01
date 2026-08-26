@@ -66,3 +66,13 @@ npm run probe
 ```
 
 验收标准：Shell 语法检查退出码为 0；测试与项目探针无失败；`package.json` 可被 Node 正常解析。
+
+## 验收结果
+
+在提交 `5d56534` 的干净隔离工作树中执行，避免工作区内并行中的 Round 3 UI 接线影响结果：
+
+- `npm test`：109 通过、0 失败、2 TODO，共 111 项。
+- `npm run probe`：9 通过、0 失败，`PROBE_RESULT=PASS`。
+- `bash -n scripts/dev-server.sh scripts/run-benchmark.sh`：通过。
+- `package.json` JSON 解析：通过。
+- `npm run benchmark -- --help`：通过，基准启动脚本与参数转发正常。
