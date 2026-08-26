@@ -235,7 +235,7 @@
           shape: 'spark', stretch: 1.5,
         });
         engine.floatingText.spawn(this.position.x, this.position.y - 24, `-${Math.round(dealt)}`, {
-          color: '#ff6b88', size: 18,
+          style: 'hurt',
         });
         engine.events.emit('player:damaged', { player: this, amount: dealt });
       }
@@ -251,7 +251,7 @@
       const healed = this.health - before;
       if (healed > 0.5 && !options.silent && this.engine) {
         this.engine.floatingText.spawn(this.position.x, this.position.y - 26, `+${Math.round(healed)}`, {
-          color: '#6bff9e', size: 16,
+          style: 'heal',
         });
         this.engine.events.emit('player:healed', { player: this, amount: healed });
       }
@@ -290,7 +290,7 @@
           drag: 0.9,
         });
         engine.floatingText.spawn(this.position.x, this.position.y - 44, `LEVEL ${this.level}`, {
-          color: '#ffd45e', size: 22, life: 1.2,
+          style: 'levelup', spread: 0, stack: false,
         });
         engine.camera.addTrauma(0.2);
         engine.events.emit('player:levelup', { player: this, level: this.level, levels });

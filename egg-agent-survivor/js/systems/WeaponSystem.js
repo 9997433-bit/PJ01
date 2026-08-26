@@ -747,18 +747,27 @@
       }
     }
 
-    /** HUD 用的武器槽快照 */
+    /**
+     * HUD 与构筑总览用的武器槽快照。
+     * elements 归一化成数组：基础武器 0~1 个元素，融合武器恒为 2 个，
+     * 界面层据此上色，不必再关心 def.element / def.elements 两种形状。
+     */
     snapshot() {
       const cooldownMultiplier = this.engine && this.engine.player
         ? this.engine.player.stats.cooldownMultiplier : 1;
       return this.weapons.map((w) => {
+        const def = w.def;
         const total = w.stats.cooldown ? w.stats.cooldown * cooldownMultiplier : 0;
         return {
           id: w.id,
-          icon: w.def.icon,
-          name: w.def.name,
+          icon: def.icon,
+          name: def.name,
+          desc: def.desc,
           level: w.level,
-          maxLevel: w.def.maxLevel,
+          maxLevel: def.maxLevel,
+          maxed: w.level >= def.maxLevel,
+          isFusion: !!def.isFusion,
+          elements: def.elements ? def.elements.slice() : (def.element ? [def.element] : []),
           ready: total > 0 ? MathUtils.clamp(1 - w.cooldown / total, 0, 1) : 1,
           damage: Math.round(w.damageDealt),
         };

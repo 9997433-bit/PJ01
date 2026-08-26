@@ -20,6 +20,7 @@
     // 处决 QTE：刻意避开 Space，否则会和冲刺抢同一次按键
     execute: ['KeyE', 'KeyF', 'Enter', 'NumpadEnter'],
     mute: ['KeyM'],
+    overview: ['Tab'],
   };
 
   // 这些键在游戏中会触发页面滚动，需要吞掉默认行为

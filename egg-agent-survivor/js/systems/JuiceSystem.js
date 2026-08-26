@@ -93,42 +93,27 @@
     }
 
     /**
-     * 伤害飘字。字号随伤害量对数增长，暴击与击杀另有配色，
-     * 这样一眼就能从数字堆里认出「这一下很重」。
+     * 无归属的伤害飘字（字号、配色、聚合规则统一由 FloatingText 决定）。
+     * 传不出目标实体时用它，比如范围伤害只知道落点。
      */
     damageNumber(x, y, amount, options = {}) {
       if (!this.enabled) return;
-      const value = Math.round(amount);
-      if (value <= 0) return;
-
-      const critical = !!options.critical;
-      const kill = !!options.kill;
-      const size = MathUtils.clamp(13 + Math.log10(1 + value) * 6, 13, 30)
-        * (critical ? 1.4 : 1)
-        * (kill ? 1.15 : 1);
-
-      let color = '#ffffff';
-      if (kill) color = '#ff9ebb';
-      if (critical) color = '#ffd45e';
-
-      this.engine.floatingText.spawn(x, y, critical ? `${value}!` : value, {
-        color,
-        size,
-        life: critical ? 1 : 0.8,
-        vy: -52 - Math.min(28, value * 0.2),
-      });
+      this.engine.floatingText.damage(null, x, y, amount, options);
     }
 
     /**
      * 单次命中的完整反馈：飘字 + 溅射火花。
      * 武器直伤与弹道命中都走这里，Enemy 自带的那份反馈会被调用方关掉，
      * 免得同一下打出两组数字。
+     *
+     * 飘字带上敌人本体，FloatingText 会把窗口内的连续伤害滚成一个数字，
+     * 火焰、闪电这类高频小伤害才不会把屏幕刷成数字雨。
      */
     hit(enemy, amount, options = {}) {
       if (!this.enabled || amount <= 0) return;
       const x = enemy.position.x;
       const y = enemy.position.y;
-      this.damageNumber(x, y - enemy.radius - 6, amount, options);
+      this.engine.floatingText.damage(enemy, x, y - enemy.radius - 6, amount, options);
 
       const particles = this.engine.particles;
       if (particles.activeCount / particles.capacity > 0.85) return;
@@ -143,7 +128,7 @@
     /** 连击提示字，跟着档位配色一起弹出来 */
     comboPopup(x, y, text, color) {
       if (!this.enabled) return;
-      this.engine.floatingText.spawn(x, y, text, { color, size: 26, life: 1.1, vy: -70 });
+      this.engine.floatingText.combo(x, y, text, color);
     }
 
     /* ================= 事件反馈 ================= */

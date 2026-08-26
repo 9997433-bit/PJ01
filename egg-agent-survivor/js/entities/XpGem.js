@@ -80,7 +80,12 @@
     collect(engine) {
       if (this.dead) return;
       this.dead = true;
+      const player = engine.player;
       engine.player.gainXp(this.value);
+      // 经验飘字跟着玩家走并按窗口累加：连吸十几颗也只有一个滚动的 +N
+      if (engine.floatingText && engine.floatingText.xp) {
+        engine.floatingText.xp(player, player.position.x, player.position.y - player.radius - 14, this.value);
+      }
       engine.particles.burst(this.position.x, this.position.y, 4, {
         colors: [this.tier.color, '#ffffff'],
         speedMin: 30, speedMax: 120, lifeMin: 0.1, lifeMax: 0.26,

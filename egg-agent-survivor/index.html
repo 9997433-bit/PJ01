@@ -11,6 +11,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
+<!-- 元素融合的权威调参表。ElementFusion 启动后立刻 fetch 它，预载能让首局
+     开始前就完成热合并；file:// 下预载与 fetch 双双失效，退回内嵌快照。 -->
+<link rel="preload" href="js/data/fusion-weapons.json" as="fetch" type="application/json" crossorigin="anonymous">
 </head>
 <body data-state="menu">
 
@@ -51,6 +54,9 @@
           <span class="stat__value" id="fps-value">60</span>
           <span class="stat__label">FPS</span>
         </div>
+        <button id="btn-build" class="icon-btn" type="button" aria-label="构筑总览" aria-expanded="false">
+          <span class="icon-btn__glyph">⌗</span>
+        </button>
         <button id="btn-mute" class="icon-btn" type="button" aria-label="音效开关" aria-pressed="false">
           <span class="icon-btn__glyph" id="mute-glyph">♪</span>
         </button>
@@ -95,6 +101,9 @@
         <span class="dash__label">DASH · SHIFT</span>
       </div>
     </div>
+
+    <!-- 武器栏：与连击表一样脱离上下两组栅格，横竖屏都靠绝对定位站住 -->
+    <div id="weapon-bar" class="weapons" aria-hidden="true"></div>
   </div>
 
   <!-- ===== 主菜单 ===== -->
@@ -123,6 +132,7 @@
         <li><kbd>SHIFT</kbd><span>相位冲刺</span></li>
         <li><kbd>E</kbd><span>Boss 处决</span></li>
         <li><kbd>M</kbd><span>音效开关</span></li>
+        <li><kbd>TAB</kbd><span>构筑总览</span></li>
         <li><kbd>ESC</kbd><span>暂停</span></li>
         <li><kbd>触摸</kbd><span>拖动屏幕即摇杆</span></li>
       </ul>
@@ -197,6 +207,23 @@
     </div>
   </section>
 
+  <!-- ===== 构筑总览 ===== -->
+  <!-- 独立于 .screen 体系：它是叠在暂停/升级界面之上的一层查询面板，
+       不参与状态机的互斥显示。 -->
+  <section id="build-overview" class="overview" aria-hidden="true">
+    <div class="overview__panel">
+      <header class="overview__head">
+        <div>
+          <p class="overview__eyebrow">BUILD OVERVIEW</p>
+          <h2 class="overview__title">构筑总览</h2>
+        </div>
+        <button id="btn-build-close" class="overview__close" type="button" aria-label="关闭构筑总览">✕</button>
+      </header>
+      <div id="build-body" class="overview__body"></div>
+      <p class="overview__hint">按 <kbd>TAB</kbd> 或 <kbd>ESC</kbd> 关闭 · 战斗中打开会自动暂停</p>
+    </div>
+  </section>
+
   <div id="boot-error" class="boot-error"></div>
   <div id="fever-overlay" class="fever-overlay" aria-hidden="true"></div>
   <div class="scanlines" aria-hidden="true"></div>
@@ -205,6 +232,8 @@
 <!-- 工具层 -->
 <script src="js/utils/Vector2.js"></script>
 <script src="js/utils/ParticleSystem.js"></script>
+<!-- 飘字管理：GameEngine 构造时就会实例化，必须排在引擎之前 -->
+<script src="js/ui/FloatingText.js"></script>
 <script src="js/utils/InputManager.js"></script>
 <script src="js/utils/Camera.js"></script>
 <!-- 引擎层 -->
@@ -225,11 +254,14 @@
 <script src="js/systems/WeaponSystem.js"></script>
 <script src="js/systems/EnemySpawner.js"></script>
 <script src="js/systems/UpgradeSystem.js"></script>
+<!-- ElementFusion 装饰 WeaponSystem 与 UpgradeSystem 的方法，必须排在两者之后 -->
+<script src="js/systems/ElementFusion.js"></script>
 <!-- 反馈层：ComboSystem 必须先于 JuiceSystem 注册，击杀爆炸要读到已更新的连击档位 -->
 <script src="js/systems/ComboSystem.js"></script>
 <script src="js/systems/JuiceSystem.js"></script>
 <!-- 界面与入口 -->
 <script src="js/ui/HUD.js"></script>
+<script src="js/ui/BuildOverview.js"></script>
 <script src="js/ui/OffscreenIndicator.js"></script>
 <script src="js/main.js"></script>
 </body>

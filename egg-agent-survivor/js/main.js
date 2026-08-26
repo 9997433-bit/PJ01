@@ -31,6 +31,11 @@
       this.upgrades = this.engine.addSystem(new global.UpgradeSystem({
         weapons: this.weaponSystem,
       }));
+      // 元素融合装饰 WeaponSystem 的命中出口与 UpgradeSystem 的卡池，
+      // 必须等这两位就位后再挂
+      this.fusion = this.engine.addSystem(new global.ElementFusion({
+        weapons: this.weaponSystem,
+      }));
 
       // 反馈层排在战斗系统之后：这一帧的击杀先结算完，再决定怎么演。
       // ComboSystem 必须早于 JuiceSystem 注册，否则击杀爆炸读到的是上一档倍率。
@@ -41,6 +46,8 @@
 
       this.hud = new global.HUD(this.engine);
       this.engine.hud = this.hud;
+      this.buildOverview = new global.BuildOverview(this.engine);
+      this.engine.buildOverview = this.buildOverview;
 
       this.pendingLevelUps = 0;
       this.bestTime = Number(localStorage.getItem('eas:bestTime') || 0);
@@ -315,6 +322,10 @@
       }
 
       if (input.wasPressed('mute')) this.toggleMute();
+
+      // 放在暂停之后：面板自己会按需切状态，先让 ESC 的语义走完
+      if (input.wasPressed('overview')) this.buildOverview.toggle();
+      this.buildOverview.update(dt);
 
       if (engine.state === GameState.MENU && input.wasPressed('confirm')) {
         this.startRun();

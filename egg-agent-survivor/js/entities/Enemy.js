@@ -798,8 +798,8 @@
         engine.particles.shockwave(this.position.x, this.position.y, {
           size: this.radius * 0.5, endSize: this.radius * 12, color: '#ffffff', life: 0.5,
         });
-        engine.floatingText.spawn(this.position.x, this.position.y - this.radius - 30, '处决!', {
-          color: '#ffd45e', size: 34, life: 1.6,
+        engine.floatingText.notice(this.position.x, this.position.y - this.radius - 30, '处决!', {
+          color: '#ffd45e', size: 34, life: 1.6, glow: 22, gradient: true,
         });
         engine.events.emit('boss:qte:success', this);
 
@@ -822,7 +822,7 @@
         colors: [this.def.color, '#ff9ebb', '#ffffff'],
         speedMin: 120, speedMax: 420, lifeMin: 0.3, lifeMax: 0.8, drag: 0.9,
       });
-      engine.floatingText.spawn(this.position.x, this.position.y - this.radius - 24, '暴怒', {
+      engine.floatingText.notice(this.position.x, this.position.y - this.radius - 24, '暴怒', {
         color: '#ff4d6d', size: 26, life: 1.2,
       });
       if (engine.hud) engine.hud.showBanner(`${this.def.name} 挣脱了处决`, '暴怒');
@@ -904,14 +904,9 @@
         }
 
         if (!options.silent) {
-          engine.floatingText.spawn(
-            this.position.x, this.position.y - this.radius - 6,
-            Math.round(dealt),
-            {
-              color: options.critical ? '#ffd45e' : '#ffffff',
-              size: options.critical ? 21 : 15,
-              life: options.critical ? 1 : 0.8,
-            }
+          engine.floatingText.damage(
+            this, this.position.x, this.position.y - this.radius - 6, dealt,
+            { critical: options.critical }
           );
           engine.particles.burst(this.position.x, this.position.y, options.critical ? 9 : 4, {
             colors: [this.def.accent, '#ffffff'],

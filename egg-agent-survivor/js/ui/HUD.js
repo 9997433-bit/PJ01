@@ -8,6 +8,9 @@
   'use strict';
 
   const MathUtils = global.MathUtils;
+  const EMPTY = [];
+  /** 无元素武器（回旋蛋镖等）的槽位配色 */
+  const NEUTRAL_WEAPON_COLOR = '#7cf9ff';
   const LAYOUT_BREAKPOINTS = Object.freeze({
     compactWidth: 860,
     portraitWidth: 620,
@@ -43,11 +46,15 @@
         comboFeverFill: document.getElementById('combo-fever-fill'),
         comboFeverLabel: document.getElementById('combo-fever-label'),
         feverOverlay: document.getElementById('fever-overlay'),
+        weapons: document.getElementById('weapon-bar'),
       };
       this._cache = {};
       this._fpsTimer = 0;
       this._layout = null;
       this._fever = false;
+      /** 武器槽 DOM 只在武器集合/等级变化时重建，每帧只写冷却条宽度 */
+      this._weaponSlots = [];
+      this._weaponSignature = null;
 
       engine.events.on('player:damaged', () => this._flashDamage());
       engine.events.on('wave:elite', () => this.showBanner('精英目标出现', '警告'));
@@ -217,6 +224,7 @@
       if (this.el.dash) this.el.dash.classList.toggle('is-ready', ready);
 
       this._updateCombo();
+      this._updateWeapons();
 
       this._fpsTimer += dt;
       if (this._fpsTimer > 0.35) {
@@ -256,6 +264,102 @@
       if (this._cache.comboColor !== snapshot.color) {
         this._cache.comboColor = snapshot.color;
         this._setCssProperty(el.combo, '--combo-color', snapshot.color);
+      }
+    }
+
+    /* ================= 武器栏 ================= */
+
+    /** 元素色取自 ElementFusion 的调色板；系统缺席时统一退回霓虹青 */
+    _elementColors(elements) {
+      const fusion = this.engine.fusion;
+      if (!fusion || !elements || !elements.length) {
+        return [NEUTRAL_WEAPON_COLOR, NEUTRAL_WEAPON_COLOR];
+      }
+      const primary = fusion.elementColor(elements[0]);
+      return [primary, elements.length > 1 ? fusion.elementColor(elements[1]) : primary];
+    }
+
+    /**
+     * 底部武器栏：图标 + 等级 + 元素色。
+     * 槽位 DOM 只在武器集合或等级变化时重建，每帧只改冷却遮罩的高度，
+     * 六把武器 × 60 帧也不会产生可观的重排。
+     */
+    _updateWeapons() {
+      const root = this.el.weapons;
+      if (!root) return;
+
+      const weapons = this.engine.weapons;
+      const slots = weapons && weapons.snapshot ? weapons.snapshot() : EMPTY;
+      if (!slots.length) {
+        if (this._weaponSignature !== '') this._clearWeaponSlots();
+        return;
+      }
+
+      const signature = slots.map((slot) => `${slot.id}.${slot.level}`).join('|');
+      if (signature !== this._weaponSignature) {
+        this._weaponSignature = signature;
+        this._buildWeaponSlots(slots);
+        root.classList.add('is-active');
+      }
+
+      for (let i = 0; i < this._weaponSlots.length; i++) {
+        const node = this._weaponSlots[i];
+        const data = slots[i];
+        if (!data) continue;
+
+        const pct = `${Math.round((1 - data.ready) * 100)}%`;
+        if (node.pct !== pct) {
+          node.pct = pct;
+          node.cooldown.style.height = pct;
+        }
+        const ready = data.ready >= 1;
+        if (node.ready !== ready) {
+          node.ready = ready;
+          node.root.classList.toggle('is-ready', ready);
+        }
+      }
+    }
+
+    _clearWeaponSlots() {
+      this._weaponSignature = '';
+      this._weaponSlots.length = 0;
+      if (!this.el.weapons) return;
+      this.el.weapons.innerHTML = '';
+      this.el.weapons.classList.remove('is-active');
+    }
+
+    _buildWeaponSlots(slots) {
+      const root = this.el.weapons;
+      root.innerHTML = '';
+      this._weaponSlots.length = 0;
+
+      for (const data of slots) {
+        const [primary, secondary] = this._elementColors(data.elements);
+        const node = document.createElement('div');
+        node.className = 'weapon'
+          + (data.isFusion ? ' weapon--fusion' : '')
+          + (data.maxed ? ' is-max' : '');
+        node.setAttribute('title', `${data.name} · Lv.${data.level}/${data.maxLevel}`);
+        this._setCssProperty(node, '--weapon-color', primary);
+        this._setCssProperty(node, '--weapon-color-2', secondary);
+
+        const cooldown = document.createElement('span');
+        cooldown.className = 'weapon__cd';
+
+        const icon = document.createElement('span');
+        icon.className = 'weapon__icon';
+        icon.textContent = data.icon;
+
+        const level = document.createElement('span');
+        level.className = 'weapon__level';
+        level.textContent = data.level;
+
+        node.appendChild(cooldown);
+        node.appendChild(icon);
+        node.appendChild(level);
+        root.appendChild(node);
+
+        this._weaponSlots.push({ root: node, cooldown, pct: null, ready: null });
       }
     }
 

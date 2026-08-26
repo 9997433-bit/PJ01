@@ -547,6 +547,106 @@ kbd {
   50% { transform: translateY(-3px) scale(1.03); }
 }
 
+/* --- 武器栏 --- */
+
+/* 和连击表一样脱离上下两组栅格，靠绝对定位站在底部中央：
+   宽屏时嵌在血条与冲刺条之间的空档里，小屏时压扁贴底。
+   槽位配色由 HUD.js 写入 --weapon-color / --weapon-color-2（元素色）。 */
+.weapons {
+  position: absolute;
+  left: 50%;
+  bottom: calc(14px + var(--safe-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 7px 9px;
+  background: linear-gradient(180deg, rgba(11, 18, 34, 0.5), rgba(7, 11, 22, 0.74));
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-s);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.weapons.is-active { opacity: 1; }
+
+.weapon {
+  --weapon-color: var(--cyan);
+  --weapon-color-2: var(--cyan);
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--weapon-color) 46%, transparent);
+  border-radius: var(--radius-s);
+  background:
+    radial-gradient(circle at 50% 130%, color-mix(in srgb, var(--weapon-color-2) 30%, transparent), transparent 70%),
+    rgba(6, 11, 22, 0.8);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  .weapon { border-color: var(--line); background: rgba(6, 11, 22, 0.8); }
+}
+
+/* 冷却遮罩从满高回落到 0，读数方向与技能图标的常见习惯一致 */
+.weapon__cd {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0%;
+  background: rgba(3, 6, 14, 0.74);
+  transition: height 0.09s linear;
+}
+.weapon__icon {
+  font-size: 22px;
+  line-height: 1;
+  filter: drop-shadow(0 0 9px var(--weapon-color));
+}
+.weapon__level {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  min-width: 15px;
+  padding: 0 3px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 14px;
+  text-align: center;
+  color: var(--bg-deep);
+  background: var(--weapon-color);
+  border-radius: 4px;
+}
+.weapon.is-ready {
+  border-color: var(--weapon-color);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--weapon-color) 38%, transparent);
+}
+.weapon.is-max .weapon__level { background: var(--gold); }
+.weapon.is-max { border-color: rgba(255, 212, 94, 0.6); }
+
+/* 融合武器用双元素色描边 + 顶部渐变条，跟基础武器一眼分得开 */
+.weapon--fusion {
+  border-width: 2px;
+  border-color: var(--weapon-color);
+}
+.weapon--fusion::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--weapon-color), var(--weapon-color-2));
+}
+.weapon--fusion .weapon__level {
+  background: linear-gradient(120deg, var(--weapon-color), var(--weapon-color-2));
+}
+
 /* --- Fever 模式全屏视觉 --- */
 
 /* 边框脉冲：一层不吃事件的描边，跟画布的色调偏移一起构成 Fever 的整屏语言 */
@@ -918,6 +1018,31 @@ body.is-fever .stat__value { color: var(--gold); }
 .card--epic .card__icon { color: var(--gold); }
 .card--epic:hover { border-color: var(--gold); box-shadow: 0 20px 48px rgba(255, 212, 94, 0.28); }
 
+.card--legendary { border-color: rgba(255, 77, 109, 0.45); }
+.card--legendary .card__icon { color: var(--pink); }
+.card--legendary:hover { border-color: var(--pink); box-shadow: 0 20px 52px rgba(255, 77, 109, 0.32); }
+
+/* 融合卡：两条元素色由 UpgradeSystem 写入 --card-color / --card-color-2，
+   卡面整体换成「双色合成」的语言，和普通传说卡区分开。 */
+.card--fusion {
+  --card-color: var(--gold);
+  --card-color-2: var(--pink);
+  border-color: var(--card-color);
+  background: linear-gradient(170deg, rgba(30, 22, 46, 0.94), rgba(9, 13, 26, 0.96));
+}
+.card--fusion .card__icon {
+  color: var(--card-color);
+  filter: drop-shadow(0 0 16px var(--card-color-2));
+}
+.card--fusion .card__name {
+  background: linear-gradient(90deg, var(--card-color), var(--card-color-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.card--fusion .card__meta { color: var(--card-color-2); }
+.card--fusion:hover { border-color: var(--card-color-2); box-shadow: 0 22px 54px rgba(0, 0, 0, 0.6); }
+
 /* 稀有度越高，顶部的光带越亮 */
 .card::after {
   content: "";
@@ -930,6 +1055,12 @@ body.is-fever .stat__value { color: var(--gold); }
 .card--common::after { color: var(--cyan); }
 .card--rare::after { color: var(--violet); }
 .card--epic::after { color: var(--gold); opacity: 0.7; }
+.card--legendary::after { color: var(--pink); opacity: 0.85; }
+.card--fusion::after {
+  height: 3px;
+  background: linear-gradient(90deg, var(--card-color), var(--card-color-2));
+  opacity: 1;
+}
 
 /* ============================================================
    虚拟摇杆 / 装饰 / 错误提示

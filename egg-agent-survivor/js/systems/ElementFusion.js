@@ -1446,7 +1446,7 @@
       if (engine && engine.floatingText) {
         engine.floatingText.spawn(
           enemy.position.x, enemy.position.y - enemy.radius - 20, cfg.name,
-          { color: cfg.color, size: 18, life: 0.9, vy: -60 }
+          { style: 'reaction', color: cfg.color }
         );
       }
       if (engine && engine.events) {
@@ -1521,14 +1521,17 @@
 
     /* ================= 融合检测与执行 ================= */
 
-    /** 元素 el 的最佳融合源：等级最高、已达解锁线的非融合武器 */
-    _bestSource(element) {
+    /**
+     * 元素 element 的最佳融合源：等级最高的非融合武器。
+     * @param {string} element
+     * @param {number} [minLevel] 等级下限，缺省为解锁线；构筑总览传 0 看进度
+     */
+    _bestSource(element, minLevel = this.config.fusion.unlockLevel) {
       if (!this.weapons) return null;
-      const unlock = this.config.fusion.unlockLevel;
       let best = null;
       for (const w of this.weapons.weapons) {
         if (w.def.isFusion || w.def.element !== element) continue;
-        if (w.level < unlock) continue;
+        if (w.level < minLevel) continue;
         if (!best || w.level > best.level) best = w;
       }
       return best;
@@ -1669,6 +1672,8 @@
           rarity: fusionCfg.cardRarity,
           weight: fusionCfg.cardWeight,
           tag: '元素融合',
+          elements: cfg.elements.slice(),
+          colors: cfg.elements.map((el) => this.elementColor(el)),
           desc: () => `${a.def.name} × ${b.def.name} 融合：${cfg.desc}（腾出 1 个武器槽）`,
           apply: () => { this.performFusion(candidate.id); },
         });
@@ -1847,13 +1852,46 @@
       const state = this.marks.get(enemy);
       return state ? state.elements : null;
     }
+
+    /** 按 id 反查反应定义（统计面板要拿名字与配色） */
+    reactionById(id) {
+      for (const key in this.config.reactions) {
+        if (this.config.reactions[key].id === id) return this.config.reactions[key];
+      }
+      return null;
+    }
+
+    /**
+     * 每个元素的融合解锁进度，供构筑总览展示。
+     * @returns {Array<{id,name,icon,color,weapon,level,unlockLevel,ready}>}
+     */
+    elementProgress() {
+      const unlockLevel = this.config.fusion.unlockLevel;
+      const out = [];
+      for (const id in this.config.elements) {
+        const cfg = this.config.elements[id];
+        const best = this._bestSource(id, 0);
+        out.push({
+          id,
+          name: cfg.name,
+          icon: cfg.icon,
+          color: cfg.color,
+          weapon: best ? best.def.name : null,
+          level: best ? best.level : 0,
+          unlockLevel,
+          ready: !!best && best.level >= unlockLevel,
+        });
+      }
+      return out;
+    }
   }
 
   /* ------------------------------------------------------------------ *
-   * 自装配
-   * index.html 引入本脚本后无需改动 main.js：加载后短暂轮询 global.game，
-   * 引擎就绪即 addSystem。手动装配（main.js 里 addSystem）优先，
-   * engine.fusion 幂等标记保证不会装两次。
+   * 自装配（兜底）
+   * Round 3 起 main.js 已显式 addSystem，装配顺序因此是确定的，AUTO_INSTALL
+   * 默认关闭。保留这条轮询路径是给「只引脚本、不改入口」的嵌入场景用的：
+   * 打开开关后加载即轮询 global.game，引擎就绪即挂载；
+   * engine.fusion 幂等标记保证与手动装配不会重复。
    * ------------------------------------------------------------------ */
 
   ElementFusion.autoInstall = function () {
@@ -1876,7 +1914,7 @@
   ElementFusion.ARCHETYPES = ARCHETYPES;
   ElementFusion.pairKey = pairKey;
   ElementFusion.CONFIG_URL = CONFIG_URL;
-  ElementFusion.AUTO_INSTALL = true;
+  ElementFusion.AUTO_INSTALL = false;
 
   global.ElementFusion = ElementFusion;
 

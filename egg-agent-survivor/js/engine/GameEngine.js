@@ -74,7 +74,7 @@
       this.camera = new global.Camera({ smoothing: 0.0016, lookAhead: 70 });
       this.input = options.input || null;
       this.particles = new global.ParticleSystem(options.particleCapacity || 3000);
-      this.floatingText = new global.FloatingTextSystem(90);
+      this.floatingText = new global.FloatingTextSystem(options.floatingTextCapacity || 140);
       this.grid = new global.SpatialGrid(options.cellSize || 110);
       this.background = null;
 
@@ -313,6 +313,9 @@
       this._fastWindows = 0;
       if (this.particles.setQuality) {
         this.particles.setQuality(profile.particleEmission, profile.particleRender);
+      }
+      if (this.floatingText.setQuality) {
+        this.floatingText.setQuality(profile.particleRender);
       }
       if (reason !== 'initial') {
         this.events.emit('performance:quality', {

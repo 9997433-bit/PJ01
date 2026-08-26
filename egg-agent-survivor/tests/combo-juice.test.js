@@ -21,6 +21,7 @@ const ROOT = path.resolve(__dirname, '..');
 const SCRIPTS = [
   'js/utils/Vector2.js',
   'js/utils/ParticleSystem.js',
+  'js/ui/FloatingText.js',
   'js/utils/Camera.js',
   'js/engine/EventBus.js',
   'js/engine/SpatialGrid.js',

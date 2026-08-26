@@ -20,6 +20,13 @@
 
   const MathUtils = global.MathUtils;
 
+  /** DOM 桩里 style 可能只是普通对象，自定义属性统一走这层保护 */
+  function setCssVar(element, name, value) {
+    if (element && element.style && typeof element.style.setProperty === 'function') {
+      element.style.setProperty(name, value);
+    }
+  }
+
   const RARITY = {
     common:    { key: 'common',    label: '普通', weight: 100 },
     rare:      { key: 'rare',      label: '稀有', weight: 44 },
@@ -352,9 +359,15 @@
         const rarity = RARITY[card.rarity] || RARITY.common;
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = `card card--${rarity.key}`;
+        button.className = `card card--${rarity.key}${card.kind === 'fusion' ? ' card--fusion' : ''}`;
         button.style.animationDelay = `${index * 70}ms`;
         button.setAttribute('aria-label', `${card.name} · ${rarity.label}`);
+
+        // 融合卡自带两种元素色，卡面直接用它们描边，一眼看出是哪对元素合成的
+        if (card.colors && card.colors.length) {
+          setCssVar(button, '--card-color', card.colors[0]);
+          setCssVar(button, '--card-color-2', card.colors[1] || card.colors[0]);
+        }
 
         const meta = card.tag || rarity.label;
         button.innerHTML = `

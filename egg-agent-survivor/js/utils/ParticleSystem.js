@@ -302,66 +302,7 @@
     }
   }
 
-  /* ---------- 漂浮文字（伤害数字 / 提示） ---------- */
-
-  class FloatingTextSystem {
-    constructor(capacity = 80) {
-      this.capacity = capacity;
-      this.items = [];
-      for (let i = 0; i < capacity; i++) {
-        this.items.push({ active: false, x: 0, y: 0, vy: -46, life: 0, maxLife: 0.9, text: '', color: '#fff', size: 16 });
-      }
-      this._cursor = 0;
-    }
-
-    spawn(x, y, text, options = {}) {
-      const item = this.items[this._cursor];
-      this._cursor = (this._cursor + 1) % this.capacity;
-      item.active = true;
-      item.x = x + MathUtils.randRange(-6, 6);
-      item.y = y;
-      item.vy = options.vy !== undefined ? options.vy : -52;
-      item.maxLife = options.life || 0.85;
-      item.life = item.maxLife;
-      item.text = String(text);
-      item.color = options.color || '#ffffff';
-      item.size = options.size || 15;
-    }
-
-    clear() { for (const item of this.items) item.active = false; }
-
-    update(dt) {
-      for (const item of this.items) {
-        if (!item.active) continue;
-        item.life -= dt;
-        if (item.life <= 0) { item.active = false; continue; }
-        item.y += item.vy * dt;
-        item.vy *= Math.pow(0.94, dt * 60);
-      }
-    }
-
-    draw(ctx, camera) {
-      ctx.save();
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      for (const item of this.items) {
-        if (!item.active) continue;
-        if (camera && !camera.isVisible(item, 80)) continue;
-        const t = item.life / item.maxLife;
-        const pop = t > 0.8 ? MathUtils.remap(t, 1, 0.8, 1.5, 1) : 1;
-        ctx.globalAlpha = Math.min(1, t * 1.6);
-        ctx.font = `800 ${item.size * pop}px "Rajdhani", "Segoe UI", sans-serif`;
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = 'rgba(4,6,16,0.85)';
-        ctx.strokeText(item.text, item.x, item.y);
-        ctx.fillStyle = item.color;
-        ctx.fillText(item.text, item.x, item.y);
-      }
-      ctx.restore();
-    }
-  }
-
   global.Particle = Particle;
   global.ParticleSystem = ParticleSystem;
-  global.FloatingTextSystem = FloatingTextSystem;
+  // 飘字已独立成 js/ui/FloatingText.js（预设 / 聚合 / 防重叠都在那边）
 })(window);
