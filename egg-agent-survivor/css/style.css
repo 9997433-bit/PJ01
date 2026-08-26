@@ -1209,7 +1209,12 @@ body.is-fever .stat__value { color: var(--gold); }
 .ov-empty { font-size: 12px; line-height: 1.6; color: var(--text-faint); }
 
 .ov-weapons, .ov-passives, .ov-reactions, .ov-elements-grid, .ov-fusions { list-style: none; }
-.ov-weapons { display: grid; gap: 8px; }
+/* 六把武器竖着排会把被动与属性挤出可视区，宽屏折成两列 */
+.ov-weapons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 8px;
+}
 
 .ov-weapon {
   --ov-color: var(--cyan);
