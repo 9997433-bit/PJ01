@@ -64,7 +64,6 @@ function createDom() {
       hidden: false,
       disabled: false,
       textContent: '',
-      innerHTML: '',
       width: 1280,
       height: 720,
       children: [],
@@ -97,6 +96,18 @@ function createDom() {
         for (const fn of el.listeners[type] || []) fn(event);
       },
     };
+
+    // 真实 DOM 里清空 innerHTML 会连子节点一起换掉；不模拟这一点的话，
+    // 反复重绘的容器（升级卡）会把历史节点一直攒下去。
+    let html = '';
+    Object.defineProperty(el, 'innerHTML', {
+      get() { return html; },
+      set(value) {
+        html = String(value);
+        if (!html) el.children.length = 0;
+      },
+    });
+
     return el;
   }
 
@@ -211,7 +222,7 @@ test('开始任务后引擎进入战斗状态，战斗系统全部挂载', () =>
 });
 
 test('从启动到实际战斗：跑 40 秒后有击杀与升级', () => {
-  const { win } = boot();
+  const { win, elements } = boot();
   const game = win.game;
   game.startRun();
 
@@ -219,15 +230,30 @@ test('从启动到实际战斗：跑 40 秒后有击杀与升级', () => {
   player.stats.maxHealth = 1e7;
   player.health = 1e7;
 
+  const cards = elements.get('upgrade-cards');
+  let picks = 0;
+
   const dt = 1 / 60;
-  for (let i = 0; i < 40 * 60; i++) {
-    player.moveInput.set(Math.cos(i * dt * 0.7), Math.sin(i * dt * 0.9));
+  let frames = 0;
+  while (frames < 40 * 60) {
+    // 升级面板会挂起模拟：不像真人一样把卡选掉，这一局就永远停在第一次升级，
+    // 后面几条「跑满 40 秒」的断言也就变成了掷硬币。
+    if (game.engine.state === win.GameState.LEVELUP) {
+      assert.ok(cards.children.length > 0, '升级面板应当有卡可选');
+      cards.children[0]._fire('click');
+      picks++;
+      continue;
+    }
+    player.moveInput.set(Math.cos(frames * dt * 0.7), Math.sin(frames * dt * 0.9));
     game.engine.update(dt, dt);
+    frames++;
   }
 
-  assert.ok(game.spawner.totalSpawned > 20, '应当持续刷怪');
+  assert.ok(game.spawner.totalSpawned > 20,
+    `应当持续刷怪，实际只刷了 ${game.spawner.totalSpawned} 只`);
   assert.ok(player.kills > 0, '自动武器应当产生击杀');
   assert.ok(player.level > 1, '应当通过拾取经验升级');
+  assert.ok(picks > 0, '40 秒内应当至少做过一次三选一');
 });
 
 test('升级面板：切到 LEVELUP 状态并渲染出三张卡', () => {
