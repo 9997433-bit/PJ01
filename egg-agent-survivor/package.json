@@ -4,9 +4,10 @@
   "private": true,
   "description": "A browser-based roguelike survival shooter.",
   "scripts": {
-    "dev": "python3 -m http.server 3000 --bind 0.0.0.0",
+    "dev": "bash scripts/dev-server.sh",
     "test": "node --test tests/*.test.js",
-    "probe": "node scripts/probe.js"
+    "probe": "node scripts/probe.js",
+    "benchmark": "bash scripts/run-benchmark.sh"
   },
   "engines": {
     "node": ">=18"
