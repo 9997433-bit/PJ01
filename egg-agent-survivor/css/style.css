@@ -33,8 +33,37 @@
   --radius-pill: 999px;
   --shadow-neon: 0 0 24px rgba(124, 249, 255, 0.28);
   --clip-corner: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --touch-target: 44px;
+
+  /* ---- 动效语汇 ----
+     全站只用这四条曲线：出场用 out-expo，交互回弹用 spring，
+     数值条用 out-quart，往复呼吸用 in-out。统一之后界面才有一致的「手感」。 */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+  --ease-out-quart: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-1: 0.14s;   /* 按下、悬停这类要立刻回应的 */
+  --dur-2: 0.24s;   /* 常规状态切换 */
+  --dur-3: 0.42s;   /* 面板入场 */
+  --dur-4: 0.7s;    /* 开场序列里的单步 */
+
+  /* ---- 玻璃拟态 ----
+     一层底色 + 一层顶部高光 + 一圈内描边，三件套统一在这里，
+     面板、对话框、卡片共用同一套材质。 */
+  --glass-tint:
+    linear-gradient(112deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0) 38%),
+    linear-gradient(158deg, rgba(146, 194, 255, 0.1), rgba(120, 150, 220, 0.03) 42%, rgba(6, 10, 20, 0.06));
+  --glass-blur: blur(16px) saturate(155%);
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.13), inset 0 -1px 0 rgba(0, 0, 0, 0.32);
+  --glass-shadow: 0 14px 38px rgba(0, 0, 0, 0.46);
+
+  /* ---- 稀有度 ----
+     卡片、掉落、构筑总览共用同一组色号，改一处全站同步。 */
+  --rarity-common: #7cf9ff;
+  --rarity-rare: #b78bff;
+  --rarity-epic: #ffd45e;
+  --rarity-legendary: #ff4d6d;
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -99,16 +128,16 @@ body {
    通用组件
    ============================================================ */
 
+/* 玻璃材质：底色 + 顶部斜向掠光 + 内描边。
+   掠光做进 background 而不是伪元素，才不会盖在面板文字上面发灰。 */
 .panel {
   position: relative;
-  background: var(--bg-panel);
+  background: var(--glass-tint), var(--bg-panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow), var(--glass-edge);
 }
 
 /* 面板左上角的霓虹小勾，科幻 HUD 的标志性细节 */
@@ -141,7 +170,12 @@ body {
   border-radius: 10px;
   cursor: pointer;
   overflow: hidden;
-  transition: transform 0.16s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+  backdrop-filter: blur(10px) saturate(140%);
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  transition:
+    transform var(--dur-1) var(--ease-spring),
+    box-shadow var(--dur-2) var(--ease-out),
+    border-color var(--dur-2) var(--ease-out);
 }
 
 .btn em {
@@ -162,7 +196,8 @@ body {
   inset: 0;
   background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.22) 50%, transparent 80%);
   transform: translateX(-120%);
-  transition: transform 0.55s ease;
+  transition: transform 0.55s var(--ease-in-out);
+  pointer-events: none;
 }
 
 .btn:hover {
@@ -744,7 +779,9 @@ body.is-fever .stat__value { color: var(--gold); }
   z-index: 20;
 }
 .screen.is-visible { opacity: 1; visibility: visible; }
-.screen.is-visible > * { animation: screen-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.screen.is-visible > * { animation: screen-in var(--dur-3) var(--ease-out-quart) both; }
+/* 开场overlay自己有一整套时间轴，不能再被通用入场动画平移一次 */
+.screen--menu.is-visible > .menu-boot { animation: none; }
 
 @keyframes screen-in {
   from { opacity: 0; transform: translateY(18px) scale(0.97); }
@@ -768,16 +805,98 @@ body.is-fever .stat__value { color: var(--gold); }
 
 /* --- 主菜单 --- */
 
+/* 菜单是唯一一块「让画布透出来」的界面：背后的深空、星云与那条绕圈的彗尾
+   就是主视觉，所以遮罩比其他面板淡得多，只压到刚好保证文字可读。 */
+.screen--menu {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(6, 10, 22, 0.28), rgba(3, 5, 12, 0.86) 78%),
+    linear-gradient(180deg, rgba(3, 6, 14, 0.55), transparent 26%, transparent 74%, rgba(3, 6, 14, 0.62));
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* 开场：一道自上而下的扫描线 + 一次成型白闪。
+   两段动画都只播一次，靠 .menu.is-entering 的重挂来重放。 */
+.menu-boot {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+.menu-boot__scan,
+.menu-boot__flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+.menu-boot__scan {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(124, 249, 255, 0.06) 44%,
+    rgba(124, 249, 255, 0.55) 50%,
+    rgba(124, 249, 255, 0.06) 56%,
+    transparent 100%
+  );
+}
+.menu-boot__flash { background: radial-gradient(circle at 50% 46%, rgba(220, 246, 255, 0.6), transparent 58%); }
+
+/* is-entering 由 main.js 在每次进入菜单时摘下重挂，动画因此可以重放 */
+.screen--menu.is-entering .menu-boot__scan { animation: boot-scan 1.05s var(--ease-out-expo) 1 both; }
+.screen--menu.is-entering .menu-boot__flash { animation: boot-flash 0.7s var(--ease-out) 0.5s 1 both; }
+
+@keyframes boot-scan {
+  0% { opacity: 0; transform: translateY(-100%) scaleY(0.4); }
+  18% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(100%) scaleY(1); }
+}
+@keyframes boot-flash {
+  0% { opacity: 0.75; }
+  100% { opacity: 0; }
+}
+
 .menu {
   position: relative;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(24px, 5vw, 64px);
+  width: min(1080px, 100%);
+}
+
+.menu__info {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
-  max-width: 620px;
+  align-items: flex-start;
+  text-align: left;
+  min-width: 0;
+}
+
+/* 入场序列：每条错开 80ms 抬起，读起来像逐条上电而不是整块弹出 */
+.screen--menu.is-entering .menu__info > *,
+.screen--menu.is-entering .stage {
+  animation: menu-rise var(--dur-4) var(--ease-out-expo) both;
+}
+.screen--menu.is-entering .menu__info > *:nth-child(1) { animation-delay: 0.42s; }
+.screen--menu.is-entering .menu__info > *:nth-child(2) { animation-delay: 0.5s; }
+.screen--menu.is-entering .menu__info > *:nth-child(3) { animation-delay: 0.58s; }
+.screen--menu.is-entering .menu__info > *:nth-child(4) { animation-delay: 0.66s; }
+.screen--menu.is-entering .menu__info > *:nth-child(5) { animation-delay: 0.74s; }
+.screen--menu.is-entering .menu__info > *:nth-child(6) { animation-delay: 0.82s; }
+.screen--menu.is-entering .menu__info > *:nth-child(7) { animation-delay: 0.9s; }
+.screen--menu.is-entering .stage { animation-delay: 0.3s; }
+
+@keyframes menu-rise {
+  from { opacity: 0; transform: translateY(22px); filter: blur(6px); }
+  to { opacity: 1; transform: none; filter: blur(0); }
 }
 
 .menu__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-family: var(--font-display);
   font-size: 11px;
   letter-spacing: 0.44em;
@@ -785,12 +904,27 @@ body.is-fever .stat__value { color: var(--gold); }
   margin-bottom: 14px;
 }
 
+/* 呼吸的状态点：静态标题旁边有个活物，整块界面就不像截图 */
+.menu__pip {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mint);
+  box-shadow: 0 0 10px var(--mint);
+  animation: pip-blink 2.4s var(--ease-in-out) infinite;
+}
+@keyframes pip-blink {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+
 .title { line-height: 0.92; margin-bottom: 18px; }
 .title__line { display: block; font-family: var(--font-display); font-weight: 900; }
 .title__line--main {
-  font-size: clamp(42px, 9vw, 82px);
+  position: relative;
+  font-size: clamp(40px, 7.4vw, 78px);
   letter-spacing: 0.04em;
-  background: linear-gradient(180deg, #ffffff 20%, var(--cyan) 65%, var(--violet));
+  background: linear-gradient(180deg, #ffffff 18%, var(--cyan) 62%, var(--violet));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -798,7 +932,7 @@ body.is-fever .stat__value { color: var(--gold); }
   animation: title-flicker 6s steps(1) infinite;
 }
 .title__line--sub {
-  font-size: clamp(18px, 3.6vw, 30px);
+  font-size: clamp(17px, 3.1vw, 28px);
   letter-spacing: 0.62em;
   color: var(--text-dim);
   text-indent: 0.62em;
@@ -811,7 +945,13 @@ body.is-fever .stat__value { color: var(--gold); }
   99% { opacity: 0.82; }
 }
 
-.menu__tagline { color: var(--text-dim); font-size: 16px; letter-spacing: 0.06em; margin-bottom: 22px; }
+.menu__tagline {
+  color: var(--text-dim);
+  font-size: clamp(14px, 1.4vw, 16px);
+  letter-spacing: 0.06em;
+  margin-bottom: 22px;
+  max-width: 30em;
+}
 
 .menu__best {
   display: flex;
@@ -821,7 +961,9 @@ body.is-fever .stat__value { color: var(--gold); }
   margin-bottom: 26px;
   border: 1px solid var(--line-soft);
   border-radius: 99px;
-  background: rgba(124, 249, 255, 0.05);
+  background: var(--glass-tint), rgba(124, 249, 255, 0.05);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .menu__best-label { font-size: 11px; letter-spacing: 0.24em; color: var(--text-faint); }
 .menu__best-value {
@@ -829,13 +971,52 @@ body.is-fever .stat__value { color: var(--gold); }
   font-size: 19px;
   font-weight: 800;
   color: var(--gold);
+  text-shadow: 0 0 14px rgba(255, 212, 94, 0.45);
   font-variant-numeric: tabular-nums;
 }
+
+/* --- 开始按钮 --- */
+
+/* 主按钮要一眼就知道「点这里」：更大的字距、一圈会呼吸的光晕、
+   一个持续右指的箭头，悬停时整颗抬起并把扫光跑一遍。 */
+.btn--hero {
+  --hero-glow: rgba(124, 249, 255, 0.45);
+  gap: 14px;
+  padding: 17px 34px;
+  min-width: 236px;
+  font-size: 16px;
+  letter-spacing: 0.18em;
+  border-radius: 12px;
+  animation: hero-breathe 3.2s var(--ease-in-out) infinite;
+}
+.btn--hero .btn__label { position: relative; z-index: 1; }
+
+.btn__chevron {
+  position: relative;
+  width: 9px;
+  height: 9px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  transform: rotate(45deg);
+  opacity: 0.85;
+  animation: chevron-nudge 1.6s var(--ease-in-out) infinite;
+}
+
+@keyframes hero-breathe {
+  0%, 100% { box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4), 0 0 0 0 var(--hero-glow); }
+  50% { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.44), 0 0 26px 2px var(--hero-glow); }
+}
+@keyframes chevron-nudge {
+  0%, 100% { transform: rotate(45deg) translate(0, 0); opacity: 0.7; }
+  50% { transform: rotate(45deg) translate(2px, -2px); opacity: 1; }
+}
+
+.btn--hero:hover { --hero-glow: rgba(124, 249, 255, 0.7); transform: translateY(-3px) scale(1.015); }
+.btn--hero:active { transform: translateY(-1px) scale(0.99); }
 
 .controls {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
   gap: 10px 22px;
   margin-top: 30px;
   list-style: none;
@@ -849,6 +1030,109 @@ body.is-fever .stat__value { color: var(--gold); }
   letter-spacing: 0.2em;
   color: var(--text-faint);
 }
+
+/* --- 角色预览台 --- */
+
+.stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+}
+
+.stage__frame {
+  position: relative;
+  width: clamp(200px, 26vw, 320px);
+  aspect-ratio: 1;
+  border-radius: 26px;
+  overflow: hidden;
+  background:
+    var(--glass-tint),
+    radial-gradient(circle at 50% 46%, rgba(30, 62, 110, 0.5), rgba(6, 10, 22, 0.72) 70%);
+  border: 1px solid var(--line);
+  box-shadow:
+    var(--glass-shadow),
+    var(--glass-edge),
+    0 0 44px rgba(124, 249, 255, 0.14);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+/* 老式 CRT 的横纹，压在预览画布上让它更像一块「设备屏幕」 */
+.stage__frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(124, 249, 255, 0.05) 0px,
+    rgba(124, 249, 255, 0.05) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+  opacity: 0.55;
+}
+
+.stage__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.stage__corner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--cyan);
+  opacity: 0.65;
+  pointer-events: none;
+}
+.stage__corner--tl { top: 10px; left: 10px; border-right: 0; border-bottom: 0; border-radius: 8px 0 0 0; }
+.stage__corner--tr { top: 10px; right: 10px; border-left: 0; border-bottom: 0; border-radius: 0 8px 0 0; }
+.stage__corner--bl { bottom: 10px; left: 10px; border-right: 0; border-top: 0; border-radius: 0 0 0 8px; }
+.stage__corner--br { bottom: 10px; right: 10px; border-left: 0; border-top: 0; border-radius: 0 0 8px 0; }
+
+/* 缓慢下扫的采样线，暗示预览台在持续读取角色数据 */
+.stage__sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 46%;
+  top: -46%;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgba(124, 249, 255, 0.16), transparent);
+  animation: stage-sweep 4.6s var(--ease-in-out) infinite;
+}
+@keyframes stage-sweep {
+  0% { transform: translateY(0); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translateY(320%); opacity: 0; }
+}
+
+.stage__readout {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.stage__row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-s);
+  background: rgba(9, 14, 27, 0.5);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+}
+.stage__row b { color: var(--text-faint); font-weight: 600; }
+.stage__row i { font-style: normal; color: var(--text-dim); font-family: var(--font-display); }
+.stage__row i.is-live { color: var(--mint); text-shadow: 0 0 10px rgba(107, 255, 208, 0.6); }
 
 /* --- 对话框（暂停 / 结算） --- */
 
@@ -1062,6 +1346,75 @@ body.is-fever .stat__value { color: var(--gold); }
   opacity: 1;
 }
 
+/* --- 稀有度光效 ---
+   每档只声明两个变量（主色 + 辉光），描边、图标、悬停阴影、顶部光带
+   全部由它们推导，加一档新稀有度只要补两行。 */
+
+.card {
+  --rarity: var(--rarity-common);
+  --rarity-glow: rgba(124, 249, 255, 0.3);
+}
+.card--rare { --rarity: var(--rarity-rare); --rarity-glow: rgba(183, 139, 255, 0.34); }
+.card--epic { --rarity: var(--rarity-epic); --rarity-glow: rgba(255, 212, 94, 0.38); }
+.card--legendary { --rarity: var(--rarity-legendary); --rarity-glow: rgba(255, 77, 109, 0.42); }
+.card--fusion { --rarity: var(--card-color); --rarity-glow: rgba(255, 212, 94, 0.4); }
+
+.card__icon { color: var(--rarity); }
+
+/* 悬停时斜掠而过的一道高光。card 本身 overflow:hidden，光带跑到边缘自动收掉 */
+.card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -65%;
+  width: 55%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.16), transparent);
+  transform: skewX(-16deg);
+  transition: left 0.62s var(--ease-in-out);
+  pointer-events: none;
+}
+.card:hover::before,
+.card:focus-visible::before { left: 118%; }
+
+.card:hover,
+.card:focus-visible {
+  border-color: var(--rarity);
+  box-shadow:
+    0 20px 46px rgba(0, 0, 0, 0.55),
+    0 0 0 1px var(--rarity-glow),
+    0 16px 46px var(--rarity-glow);
+}
+
+/* 史诗以上：顶部光带流动 + 卡面持续呼吸，一眼能从三张里挑出好东西。
+   card-in 要一并重写，否则 animation 简写会把入场动画覆盖掉。 */
+.card--epic::after,
+.card--legendary::after,
+.card--fusion::after {
+  background: linear-gradient(90deg, transparent, var(--rarity) 45%, #ffffff 50%, var(--rarity) 55%, transparent);
+  background-size: 240% 100%;
+  opacity: 0.95;
+  animation: rarity-band 2.6s linear infinite;
+}
+@keyframes rarity-band {
+  from { background-position: 240% 0; }
+  to { background-position: -240% 0; }
+}
+
+.card--epic,
+.card--legendary,
+.card--fusion {
+  animation:
+    card-in var(--dur-3) var(--ease-out-quart) both,
+    rarity-breathe 3s var(--ease-in-out) infinite;
+}
+/* 呼吸走 filter 而不是 box-shadow：后者会被动画锁死，
+   :hover 那圈更亮的稀有度光就再也顶不上来了。 */
+@keyframes rarity-breathe {
+  0%, 100% { filter: drop-shadow(0 0 2px transparent); }
+  50% { filter: drop-shadow(0 0 13px var(--rarity-glow)); }
+}
+
 /* ============================================================
    构筑总览
    叠在 .screen（z-index 20）之上：暂停和三选一时都能直接翻看构筑。
@@ -1209,7 +1562,12 @@ body.is-fever .stat__value { color: var(--gold); }
 .ov-empty { font-size: 12px; line-height: 1.6; color: var(--text-faint); }
 
 .ov-weapons, .ov-passives, .ov-reactions, .ov-elements-grid, .ov-fusions { list-style: none; }
-.ov-weapons { display: grid; gap: 8px; }
+/* 六把武器竖着排会把被动与属性挤出可视区，宽屏折成两列 */
+.ov-weapons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 8px;
+}
 
 .ov-weapon {
   --ov-color: var(--cyan);
@@ -1588,6 +1946,18 @@ body.is-fever .stat__value { color: var(--gold); }
   .card__desc { min-height: 0; font-size: 13px; }
   .card__icon { font-size: 26px; }
   .levelup__hint { display: none; }
+
+  /* 窄屏改成单列并把预览台提到最上：先看见角色，再往下读文案 */
+  .menu {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    gap: 18px;
+  }
+  .menu__info { align-items: center; text-align: center; }
+  .menu__tagline { margin-bottom: 18px; }
+  .stage { order: -1; }
+  .stage__frame { width: clamp(148px, 42vw, 208px); border-radius: 22px; }
+  .controls { justify-content: center; }
 }
 
 @media (max-width: 860px) {
@@ -1599,10 +1969,13 @@ body.is-fever .stat__value { color: var(--gold); }
 
 @media (max-width: 620px) {
   .btn { min-width: 150px; padding: 13px 22px; font-size: 13px; }
+  .btn--hero { min-width: 200px; padding: 15px 26px; font-size: 14px; letter-spacing: 0.14em; }
   .dialog { padding: 30px 22px 26px; }
   .results { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .result__value { font-size: 20px; }
   .controls { gap: 8px 14px; font-size: 12px; }
+  /* 竖屏高度金贵：读数条收成两项，扫描线也省掉 */
+  .stage__readout .stage__row:nth-child(2) { display: none; }
 }
 
 @media (max-width: 430px) {
@@ -1617,6 +1990,8 @@ body.is-fever .stat__value { color: var(--gold); }
   .menu__tagline { font-size: 14px; }
   .card { padding-right: 12px; gap: 10px; }
   .card__name { font-size: 16px; }
+  .stage__frame { width: clamp(132px, 40vw, 168px); }
+  .stage__corner { width: 14px; height: 14px; }
 }
 
 @media (max-height: 520px) and (orientation: landscape) {
@@ -1632,6 +2007,23 @@ body.is-fever .stat__value { color: var(--gold); }
   .title { margin-bottom: 12px; }
   .menu__best { margin-bottom: 16px; }
   .dialog, .levelup { margin: auto; }
+
+  /* 矮横屏（手机横握）：回到左右分栏，预览台按可用高度收缩 */
+  .menu {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 20px;
+  }
+  .menu__info { align-items: flex-start; text-align: left; }
+  .stage { order: 0; gap: 8px; }
+  .stage__frame { width: min(38vh, 190px); }
+  .stage__readout { display: none; }
+}
+
+/* 桌面大屏：把预览台放大，标题与正文的呼吸空间也一起给足 */
+@media (min-width: 1280px) and (min-height: 720px) {
+  .menu { gap: 72px; }
+  .stage__frame { width: clamp(280px, 24vw, 360px); }
 }
 
 @media (prefers-reduced-motion: reduce) {
