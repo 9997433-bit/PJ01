@@ -15,13 +15,21 @@
     摇杆排除区共 6 项 CSS 契约；
   - 20 个本地 HTML 引用；
   - 19 个入口脚本引用；
+<<<<<<< HEAD
   - 27 个 JavaScript 文件通过 `node --check`。
+=======
+  - 25 个 JavaScript 文件通过 `node --check`。
+>>>>>>> origin/cursor/mobile-layout-r2-verified-22e8
 
 ### `node --test tests/*.test.js`
 
 - 结果：`PASS`
 - 汇总：40 tests，38 passed，0 failed，2 todo
+<<<<<<< HEAD
 - 总耗时：2587ms
+=======
+- 总耗时：2581ms
+>>>>>>> origin/cursor/mobile-layout-r2-verified-22e8
 - R2 新增的 5 个移动端布局用例全部通过：
   1. `320×568`、`375×667`、`390×844`、`620×844`、`620×520`、
      `621×844`、`768×1024`、`860×900`、`861×521`、`1024×500`
