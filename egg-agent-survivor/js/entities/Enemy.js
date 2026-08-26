@@ -14,18 +14,22 @@
     grunt: {
       name: '杂兵蛋', radius: 15, health: 22, speed: 76, damage: 9, xp: 4,
       color: '#ff6b8a', accent: '#ffd0da', shape: 'blob',
+      contactCooldown: 0.6, kbResist: 0,
     },
     runner: {
       name: '突击蛋', radius: 12, health: 14, speed: 138, damage: 7, xp: 5,
       color: '#ffd45e', accent: '#fff2c4', shape: 'dart',
+      contactCooldown: 0.5, kbResist: 0,
     },
     tank: {
       name: '重甲蛋', radius: 24, health: 90, speed: 52, damage: 17, xp: 14,
       color: '#b78bff', accent: '#e6d6ff', shape: 'hex',
+      contactCooldown: 0.75, kbResist: 0.45,
     },
     elite: {
       name: '精英蛋', radius: 30, health: 320, speed: 62, damage: 24, xp: 60,
       color: '#ff4d6d', accent: '#ffe0e6', shape: 'hex', elite: true,
+      contactCooldown: 0.8, kbResist: 0.7,
     },
   };
 
@@ -48,6 +52,10 @@
       this.contactTimer = 0;
       this.hitFlash = 0;
       this.knockback = new Vector2(0, 0);
+      this.burn = null;  // {dps, time}
+      this.slow = null;  // {mult, time}
+      this.canTouch = true;
+      this.kbResist = def.kbResist || 0;
       this._steer = new Vector2(0, 0);
       this._wobble = Math.random() * Math.PI * 2;
       this._spawnAnim = 0;
@@ -59,6 +67,8 @@
       this.hitFlash = Math.max(0, this.hitFlash - dt * 4);
       this.contactTimer = Math.max(0, this.contactTimer - dt);
       this._wobble += dt * 5;
+      this._updateStatus(dt, engine);
+      if (this.dead) return;
 
       const player = engine.player;
       if (!player || !player.isAlive) {
@@ -69,7 +79,8 @@
 
       const toPlayer = player.position.sub(this.position);
       const distance = toPlayer.length();
-      this._steer.copy(toPlayer).normalizeSelf().scaleSelf(this.speed);
+      const speed = this.speed * (this.slow ? this.slow.mult : 1);
+      this._steer.copy(toPlayer).normalizeSelf().scaleSelf(speed);
 
       this._applySeparation(engine);
 
@@ -85,8 +96,10 @@
 
       this.position.addScaledSelf(this.velocity, dt);
 
-      if (distance < this.radius + player.radius && this.contactTimer <= 0) {
-        this.contactTimer = CONTACT_COOLDOWN;
+      // 外部碰撞系统在场时由它统一结算接触伤害
+      const externalContact = !!(engine.combat || engine.collision);
+      if (!externalContact && distance < this.radius + player.radius && this.contactTimer <= 0) {
+        this.contactTimer = this.def.contactCooldown || CONTACT_COOLDOWN;
         player.takeDamage(this.damage, { source: this });
       }
     }
@@ -117,6 +130,53 @@
       }
     }
 
+    /* ---------- 状态效果（供外部战斗系统调用） ---------- */
+
+    /** 持续灼烧；同时存在时取更强的 dps 并刷新持续时间 */
+    applyBurn(dps, duration) {
+      if (!dps || !duration) return;
+      if (!this.burn) this.burn = { dps, time: duration };
+      else {
+        this.burn.dps = Math.max(this.burn.dps, dps);
+        this.burn.time = Math.max(this.burn.time, duration);
+      }
+    }
+
+    /** 减速；mult 为速度倍率（0.6 表示降到 60%），取更强的一个 */
+    applySlow(mult, duration) {
+      if (!duration) return;
+      const value = MathUtils.clamp(mult, 0.05, 1);
+      if (!this.slow) this.slow = { mult: value, time: duration };
+      else {
+        this.slow.mult = Math.min(this.slow.mult, value);
+        this.slow.time = Math.max(this.slow.time, duration);
+      }
+    }
+
+    _updateStatus(dt, engine) {
+      if (this.slow) {
+        this.slow.time -= dt;
+        if (this.slow.time <= 0) this.slow = null;
+      }
+
+      if (this.burn) {
+        this.burn.time -= dt;
+        this.health -= this.burn.dps * dt;
+        if (engine && Math.random() < dt * 14) {
+          engine.particles.emit({
+            x: this.position.x + MathUtils.randRange(-this.radius, this.radius),
+            y: this.position.y + MathUtils.randRange(-this.radius, 0),
+            vy: -MathUtils.randRange(24, 60),
+            life: MathUtils.randRange(0.2, 0.4),
+            size: MathUtils.randRange(2, 4),
+            color: '#ff9a3c',
+          });
+        }
+        if (this.burn.time <= 0) this.burn = null;
+        if (this.health <= 0) { this._die(); return; }
+      }
+    }
+
     takeDamage(amount, options = {}) {
       if (this.dead) return 0;
       this.health -= amount;
@@ -124,14 +184,21 @@
 
       const engine = this.engine;
       if (engine) {
-        if (options.knockback && options.direction) {
-          this.knockback.copy(options.direction.normalized().scale(options.knockback));
+        // 击退方向可以给向量，也可以给角度
+        const source = options.direction;
+        const direction = source
+          ? (source.normalized ? source.normalized() : new Vector2(source.x, source.y).normalizeSelf())
+          : (typeof options.angle === 'number' ? Vector2.fromAngle(options.angle) : null);
+        if (options.knockback && direction) {
+          this.knockback.copy(direction.scale(options.knockback));
         }
-        engine.floatingText.spawn(
-          this.position.x, this.position.y - this.radius - 6,
-          Math.round(amount),
-          { color: options.critical ? '#ffd45e' : '#ffffff', size: options.critical ? 20 : 15 }
-        );
+        if (!options.silent) {
+          engine.floatingText.spawn(
+            this.position.x, this.position.y - this.radius - 6,
+            Math.round(amount),
+            { color: options.critical ? '#ffd45e' : '#ffffff', size: options.critical ? 20 : 15 }
+          );
+        }
         engine.particles.burst(this.position.x, this.position.y, 5, {
           colors: [this.def.accent, '#ffffff'],
           speedMin: 50, speedMax: 180, lifeMin: 0.12, lifeMax: 0.3,
@@ -159,14 +226,17 @@
       });
       if (this.def.elite) engine.camera.addTrauma(0.5);
 
-      const gems = this.def.elite ? 6 : 1;
-      for (let i = 0; i < gems; i++) {
-        const offset = gems > 1 ? Vector2.randomInsideCircle(34) : new Vector2(0, 0);
-        engine.add(new global.XPGem(
-          this.position.x + offset.x,
-          this.position.y + offset.y,
-          Math.ceil(this.xpValue / gems)
-        ));
+      const GemClass = global.XPGem || global.XpGem;
+      if (GemClass) {
+        const gems = this.def.elite ? 6 : 1;
+        for (let i = 0; i < gems; i++) {
+          const offset = gems > 1 ? Vector2.randomInsideCircle(34) : new Vector2(0, 0);
+          engine.add(new GemClass(
+            this.position.x + offset.x,
+            this.position.y + offset.y,
+            Math.ceil(this.xpValue / gems)
+          ));
+        }
       }
 
       if (engine.player) engine.player.addKill();
