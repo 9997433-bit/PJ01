@@ -1,0 +1,185 @@
+{
+  "meta": {
+    "version": 1,
+    "doc": ".agent_workspace/ROUND2_FUSION_SPEC.md",
+    "note": "元素融合系统的权威调参数据。js/systems/ElementFusion.js 内嵌同版本快照用于 file:// 离线兜底；修改本文件后必须同步快照，tests/element-fusion.test.js 会校验两者逐字段一致。"
+  },
+  "elements": {
+    "fire":  { "name": "火", "color": "#ff8a3d", "icon": "🔥", "desc": "灼烧持续伤害" },
+    "frost": { "name": "冰", "color": "#7fd8ff", "icon": "❄", "desc": "减速与控制" },
+    "volt":  { "name": "雷", "color": "#ffe86b", "icon": "⚡", "desc": "弹射与眩晕" },
+    "venom": { "name": "毒", "color": "#9dff57", "icon": "☠", "desc": "可叠层的毒蚀" },
+    "light": { "name": "光", "color": "#fff3c4", "icon": "✨", "desc": "增幅与净化" }
+  },
+  "weaponElements": {
+    "flamethrower": "fire",
+    "frostNova": "frost",
+    "chainBolt": "volt",
+    "knifeOrbit": "venom",
+    "magicBolt": "light",
+    "boomerang": null
+  },
+  "marks": {
+    "duration": 4,
+    "maxStacks": 3,
+    "perElement": {
+      "venom": { "duration": 5, "maxStacks": 8, "dps": 3, "tick": 0.5 }
+    }
+  },
+  "fusion": {
+    "unlockLevel": 5,
+    "carryover": 0.5,
+    "maxFusionWeapons": 2,
+    "cardWeight": 60,
+    "cardRarity": "legendary",
+    "guaranteeCard": true,
+    "reactionCooldown": 1.0,
+    "growthPerMinute": 0.15,
+    "maxReactionsPerHit": 1
+  },
+  "reactions": {
+    "fire+frost": {
+      "id": "vaporize", "name": "蒸发", "icon": "♨", "color": "#e8fbff", "cooldown": 1.0,
+      "damage": 30, "maxHealthPct": 0.05, "maxHealthCap": 120,
+      "radius": 90, "splash": 0.6, "knockback": 120,
+      "consume": { "fire": 1, "frost": 1 }
+    },
+    "fire+volt": {
+      "id": "overload", "name": "超载", "icon": "💥", "color": "#ffb35c", "cooldown": 1.2,
+      "damage": 46, "radius": 110, "delay": 0.45, "knockback": 300,
+      "consume": { "fire": 1, "volt": 1 }
+    },
+    "fire+venom": {
+      "id": "detonate", "name": "爆燃", "icon": "🧨", "color": "#c8ff6b", "cooldown": 1.4,
+      "perStack": 16, "radius": 70, "splash": 0.4,
+      "consume": { "fire": 1, "venom": "all" }
+    },
+    "fire+light": {
+      "id": "sanctify", "name": "圣焰", "icon": "🕯", "color": "#ffe9b0", "cooldown": 1.2,
+      "damage": 34, "burnBoost": 1.6, "burnTime": 3, "fallbackBurnDps": 6,
+      "consume": { "fire": 1, "light": 1 }
+    },
+    "frost+volt": {
+      "id": "superconduct", "name": "超导", "icon": "🧊", "color": "#bfe9ff", "cooldown": 1.0,
+      "damage": 36, "slowMult": 0.3, "slowTime": 3, "stun": 0.35,
+      "consume": { "frost": 1, "volt": 1 }
+    },
+    "frost+venom": {
+      "id": "shatter", "name": "脆化", "icon": "💠", "color": "#d5f6ff", "cooldown": 1.2,
+      "damage": 40, "slowedBonus": 1.5, "radius": 80, "splash": 0.5,
+      "consume": { "frost": 1, "venom": 2 }
+    },
+    "frost+light": {
+      "id": "refract", "name": "折射", "icon": "🔮", "color": "#e6f7ff", "cooldown": 1.1,
+      "damage": 30, "targets": 3, "radius": 220, "spreadMark": "frost",
+      "consume": { "frost": 1, "light": 1 }
+    },
+    "venom+volt": {
+      "id": "contagion", "name": "感电扩散", "icon": "🦠", "color": "#c0ff8a", "cooldown": 1.5,
+      "damage": 18, "targets": 4, "radius": 180, "copyStacks": true,
+      "consume": { "volt": 1 }
+    },
+    "light+volt": {
+      "id": "flash", "name": "闪耀", "icon": "🌟", "color": "#fff8d0", "cooldown": 1.6,
+      "damage": 24, "radius": 130, "stun": 0.7,
+      "consume": { "light": 1, "volt": 1 }
+    },
+    "light+venom": {
+      "id": "purge", "name": "净化", "icon": "✴", "color": "#f2ffd9", "cooldown": 1.4,
+      "perStack": 12, "healPerStack": 1, "healCap": 8,
+      "consume": { "light": 1, "venom": "all" }
+    }
+  },
+  "weapons": {
+    "steamVortex": {
+      "name": "蒸汽奇点", "icon": "🌀", "elements": ["fire", "frost"],
+      "archetype": "zone", "zoneStyle": "vortex", "applies": "alternate",
+      "desc": "召唤缓慢游走的高压蒸汽涡旋，吸聚敌人并持续蒸灼",
+      "maxLevel": 6,
+      "base": { "damage": 26, "cooldown": 6.5, "duration": 4, "radius": 95, "tick": 0.4, "drift": 90, "pull": 60, "count": 1 },
+      "perLevel": { "damage": 7, "cooldown": -0.45, "duration": 0.35, "radius": 8 },
+      "levelText": ["", "召唤 1 座蒸汽涡旋", "范围扩大", "持续时间延长", "伤害提升", "冷却缩短", "伤害与范围全面强化"]
+    },
+    "plasmaStorm": {
+      "name": "等离子风暴", "icon": "🌩", "elements": ["fire", "volt"],
+      "archetype": "strike", "targeting": "cluster", "applies": "alternate",
+      "desc": "呼叫等离子轰击，在怪群头顶落下连环爆炸",
+      "maxLevel": 6,
+      "base": { "damage": 58, "cooldown": 3.4, "strikes": 3, "radius": 78, "range": 520, "stagger": 0.14, "telegraph": 0.32, "knockback": 180, "stun": 0 },
+      "perLevel": { "damage": 14, "cooldown": -0.2, "strikes": 0.5, "radius": 5 },
+      "levelText": ["", "呼叫 3 道等离子轰击", "伤害提升", "+1 道轰击", "爆炸范围扩大", "冷却缩短", "+1 道轰击，伤害提升"]
+    },
+    "brimstonePlague": {
+      "name": "硫磺瘟疫", "icon": "☣", "elements": ["fire", "venom"],
+      "archetype": "zone", "zoneStyle": "pool", "applies": "alternate",
+      "desc": "在敌人脚下引燃硫磺毒沼，灼烧与剧毒同时侵蚀",
+      "maxLevel": 6,
+      "base": { "damage": 18, "cooldown": 4.6, "duration": 3.4, "radius": 70, "tick": 0.45, "drift": 0, "pull": 0, "count": 2 },
+      "perLevel": { "damage": 5, "cooldown": -0.25, "duration": 0.3, "count": 0.34 },
+      "levelText": ["", "喷洒 2 片硫磺毒沼", "毒沼持续更久", "+1 片毒沼", "伤害提升", "冷却缩短", "+1 片毒沼，伤害提升"]
+    },
+    "coronaNova": {
+      "name": "日冕新星", "icon": "☀", "elements": ["fire", "light"],
+      "archetype": "nova", "applies": "alternate",
+      "desc": "以自身为中心炸开日冕环，圣焰灼烧所及之敌",
+      "maxLevel": 6,
+      "base": { "damage": 55, "cooldown": 5.2, "radius": 190, "knockback": 320 },
+      "perLevel": { "damage": 15, "cooldown": -0.35, "radius": 16 },
+      "levelText": ["", "炸开灼热的日冕环", "范围扩大", "伤害提升", "冷却缩短", "范围再扩大", "伤害大幅提升"]
+    },
+    "superconductorField": {
+      "name": "超导力场", "icon": "🧲", "elements": ["frost", "volt"],
+      "archetype": "aura", "applies": "both",
+      "desc": "身周展开超导力场：范围内敌人持续减速并遭电弧打击",
+      "maxLevel": 6,
+      "base": { "damage": 20, "radius": 150, "zaps": 2, "zapInterval": 0.9, "slowMult": 0.72, "slowTime": 0.6, "stun": 0.1 },
+      "perLevel": { "damage": 6, "radius": 12, "zaps": 0.4, "zapInterval": -0.06 },
+      "levelText": ["", "展开超导力场", "电弧伤害提升", "+1 道电弧", "力场扩大", "电弧更密集", "全面强化"]
+    },
+    "wintersting": {
+      "name": "凛冬荆棘", "icon": "❆", "elements": ["frost", "venom"],
+      "archetype": "orbitals", "applies": "alternate",
+      "desc": "淬毒冰棘环绕旋转，缓速并毒蚀近身之敌",
+      "maxLevel": 6,
+      "base": { "damage": 16, "count": 3, "orbit": 110, "spin": 2.0, "hitCooldown": 0.5, "knockback": 120 },
+      "perLevel": { "damage": 5, "count": 0.5, "orbit": 7, "spin": 0.08 },
+      "levelText": ["", "3 根淬毒冰棘开始旋转", "+1 根冰棘", "伤害提升", "轨道扩大", "+1 根冰棘", "伤害与转速提升"]
+    },
+    "auroraPrism": {
+      "name": "极光棱镜", "icon": "◈", "elements": ["frost", "light"],
+      "archetype": "beam", "applies": "alternate",
+      "desc": "展开旋转的极光射线，冻结并撕裂整条直线上的敌人",
+      "maxLevel": 6,
+      "base": { "damage": 34, "cooldown": 7, "duration": 2.6, "length": 320, "width": 26, "sweep": 1.6, "tick": 0.25 },
+      "perLevel": { "damage": 9, "cooldown": -0.4, "duration": 0.25, "length": 18 },
+      "levelText": ["", "展开旋转的极光射线", "射线更长", "伤害提升", "持续时间延长", "冷却缩短", "伤害大幅提升"]
+    },
+    "venomGrid": {
+      "name": "腐电蛛网", "icon": "🕸", "elements": ["venom", "volt"],
+      "archetype": "chainStrike", "applies": "alternate",
+      "desc": "毒电弧在敌群间跳跃，每一跳都注入剧毒",
+      "maxLevel": 6,
+      "base": { "damage": 30, "cooldown": 1.9, "chains": 4, "range": 420, "jumpRange": 210, "falloff": 0.9, "stun": 0.1 },
+      "perLevel": { "damage": 8, "cooldown": -0.12, "chains": 0.7 },
+      "levelText": ["", "毒电弧弹射 4 次", "+1 次弹射", "伤害提升", "+1 次弹射", "冷却缩短", "+1 次弹射，伤害提升"]
+    },
+    "judgement": {
+      "name": "天雷裁决", "icon": "⚖", "elements": ["light", "volt"],
+      "archetype": "strike", "targeting": "strongest", "applies": "both",
+      "desc": "圣光天雷轰击最强之敌，震慑周围一切",
+      "maxLevel": 6,
+      "base": { "damage": 110, "cooldown": 4.8, "strikes": 1, "radius": 120, "range": 560, "stagger": 0.2, "telegraph": 0.4, "knockback": 260, "stun": 0.8 },
+      "perLevel": { "damage": 30, "cooldown": -0.3, "radius": 8, "strikes": 0.25 },
+      "levelText": ["", "天雷轰击最强之敌", "伤害提升", "眩晕范围扩大", "冷却缩短", "+1 道天雷", "伤害大幅提升"]
+    },
+    "sanctifiedBlight": {
+      "name": "辉光瘟疫", "icon": "🦋", "elements": ["light", "venom"],
+      "archetype": "seekerSwarm", "applies": "alternate",
+      "desc": "放出追踪的辉光孢子，圣光与剧毒一同侵染目标",
+      "maxLevel": 6,
+      "base": { "damage": 22, "cooldown": 2.2, "count": 3, "speed": 430, "pierce": 1, "homing": 5.2, "range": 560 },
+      "perLevel": { "damage": 6, "cooldown": -0.14, "count": 0.5, "pierce": 0.2 },
+      "levelText": ["", "放出 3 枚辉光孢子", "伤害提升", "+1 枚孢子", "获得额外穿透", "冷却缩短", "+1 枚孢子，伤害提升"]
+    }
+  }
+}
