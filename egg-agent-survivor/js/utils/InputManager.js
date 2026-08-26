@@ -7,6 +7,8 @@
 (function (global) {
   'use strict';
 
+  const MathUtils = global.MathUtils;
+
   const KEY_BINDINGS = {
     up: ['KeyW', 'ArrowUp'],
     down: ['KeyS', 'ArrowDown'],
@@ -47,7 +49,7 @@
         origin: new global.Vector2(0, 0),
         current: new global.Vector2(0, 0),
         vector: new global.Vector2(0, 0),
-        radius: options.joystickRadius || 62,
+        radius: options.joystickRadius || 48,
         base: options.joystickBase || null,
         knob: options.joystickKnob || null,
       };
@@ -133,9 +135,17 @@
 
     _startJoystick(e) {
       const j = this.joystick;
+      const rect = this.target.getBoundingClientRect();
+      const interactive = e.target
+        && typeof e.target.closest === 'function'
+        && e.target.closest('button, a, input, select, textarea, [role="button"]');
+
+      // 移动摇杆只占左半屏；右半屏和 HUD 控件保留给交互与未来的主动技能。
+      if (interactive || this.pointerScreen.x > rect.width * 0.5) return;
+
       j.active = true;
       j.pointerId = e.pointerId;
-      j.origin.copy(this.pointerScreen);
+      j.origin.copy(this._constrainJoystickOrigin(this.pointerScreen, rect));
       j.current.copy(this.pointerScreen);
       j.vector.set(0, 0);
       if (j.base) {
@@ -153,7 +163,8 @@
       const len = delta.length();
       // 拖出半径外时把摇杆原点跟着拽走，手指不会「跑出」摇杆
       if (len > j.radius) {
-        j.origin.copy(j.current.sub(delta.normalized().scale(j.radius)));
+        const shiftedOrigin = j.current.sub(delta.normalized().scale(j.radius));
+        j.origin.copy(this._constrainJoystickOrigin(shiftedOrigin));
         if (j.base) {
           j.base.style.left = `${j.origin.x}px`;
           j.base.style.top = `${j.origin.y}px`;
@@ -161,6 +172,41 @@
       }
       j.vector.copy(j.current.sub(j.origin).scale(1 / j.radius)).clampLengthSelf(1);
       this._renderKnob();
+    }
+
+    _cssPixels(name, fallback = 0) {
+      if (typeof global.getComputedStyle !== 'function') return fallback;
+      const raw = global.getComputedStyle(this.target).getPropertyValue(name);
+      const values = raw && raw.match(/-?(?:\d*\.)?\d+px/g);
+      if (!values || values.length === 0) return fallback;
+      return values.reduce((sum, value) => sum + Number.parseFloat(value), 0);
+    }
+
+    /**
+     * HUD.js 把当前布局的保留高度写到 viewport，CSS 再叠加安全区。
+     * 原点与底盘半径一起钳制，因此刘海、顶部双行 HUD、横屏状态条都不会被摇杆覆盖。
+     */
+    _constrainJoystickOrigin(point, suppliedRect) {
+      const rect = suppliedRect || this.target.getBoundingClientRect();
+      const radius = this.joystick.radius;
+      const inset = 8;
+      const left = this._cssPixels('--joystick-safe-left', inset) + radius;
+      const rightEdge = Math.min(
+        rect.width * 0.5 - inset - radius,
+        rect.width - this._cssPixels('--joystick-safe-right', inset) - radius,
+      );
+      const top = this._cssPixels('--joystick-safe-top', 0) + radius;
+      const bottom = rect.height - this._cssPixels('--joystick-safe-bottom', 0) - radius;
+
+      // 极端小视口无法容纳完整底盘时固定在可用区中心，避免 min/max 反转产生 NaN。
+      const minX = Math.min(left, rightEdge);
+      const maxX = Math.max(left, rightEdge);
+      const minY = Math.min(top, bottom);
+      const maxY = Math.max(top, bottom);
+      return new global.Vector2(
+        MathUtils.clamp(point.x, minX, maxX),
+        MathUtils.clamp(point.y, minY, maxY),
+      );
     }
 
     _endJoystick() {

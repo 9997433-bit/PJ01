@@ -109,6 +109,24 @@ addCheck(
     : `${requiredProjectFiles.length} files found`,
 );
 
+const round2Files = [
+  'css/style.css',
+  'js/ui/HUD.js',
+  'js/utils/InputManager.js',
+  'tests/mobile-layout.test.js',
+  '.agent_workspace/probes/round2-probe-results.md',
+];
+const missingRound2Files = round2Files.filter(
+  (file) => !fs.existsSync(path.join(projectRoot, file)),
+);
+addCheck(
+  'Round 2 mobile layout artifacts exist',
+  missingRound2Files.length === 0,
+  missingRound2Files.length
+    ? `missing: ${missingRound2Files.join(', ')}`
+    : `${round2Files.length} files found: ${round2Files.join(', ')}`,
+);
+
 let packageJson;
 try {
   packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'));
@@ -126,6 +144,9 @@ try {
 const allFiles = walk(projectRoot);
 const htmlFiles = allFiles.filter((file) => path.extname(file).toLowerCase() === '.html');
 const javaScriptFiles = allFiles.filter((file) => path.extname(file).toLowerCase() === '.js');
+const nodeTestFiles = allFiles.filter((file) => (
+  relative(file).startsWith('tests/') && file.endsWith('.test.js')
+));
 addCheck(
   'HTML entry point is discoverable',
   htmlFiles.includes(path.join(projectRoot, 'index.html')),
@@ -133,6 +154,42 @@ addCheck(
     ? `${htmlFiles.length} HTML file(s): ${htmlFiles.map(relative).join(', ')}`
     : 'no HTML files found',
 );
+addCheck(
+  'Round 2 mobile viewport test is discoverable',
+  nodeTestFiles.includes(path.join(projectRoot, 'tests/mobile-layout.test.js')),
+  nodeTestFiles.length
+    ? `${nodeTestFiles.length} Node test file(s): ${nodeTestFiles.map(relative).join(', ')}`
+    : 'no Node test files found',
+);
+
+try {
+  const css = fs.readFileSync(path.join(projectRoot, 'css/style.css'), 'utf8');
+  const mobileContracts = [
+    ['four-sided safe-area variables', ['top', 'right', 'bottom', 'left'].every(
+      (side) => css.includes(`env(safe-area-inset-${side}, 0px)`),
+    )],
+    ['dynamic viewport height', css.includes('100dvh')],
+    ['compact HUD layout', css.includes('#hud[data-layout="compact"]')],
+    ['portrait HUD layout', css.includes('#hud[data-layout="portrait"]')],
+    ['44px touch target', css.includes('--touch-target: 44px')],
+    ['joystick HUD exclusion variables', (
+      css.includes('--joystick-safe-top:')
+      && css.includes('--joystick-safe-bottom:')
+    )],
+  ];
+  const failedContracts = mobileContracts
+    .filter(([, passed]) => !passed)
+    .map(([name]) => name);
+  addCheck(
+    'Round 2 mobile CSS contracts are present',
+    failedContracts.length === 0,
+    failedContracts.length
+      ? `missing: ${failedContracts.join(', ')}`
+      : `${mobileContracts.length} contracts checked`,
+  );
+} catch (error) {
+  addCheck('Round 2 mobile CSS contracts are present', false, error.message);
+}
 
 const allReferences = [];
 for (const htmlFile of htmlFiles) {
