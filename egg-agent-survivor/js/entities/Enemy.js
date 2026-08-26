@@ -234,6 +234,7 @@
       armor: 6, kbResist: 0.95, mass: 12, contactCooldown: 1.0,
       color: '#ff4d6d', accent: '#ffd45e',
       isBoss: true,
+      canExecute: true,
       behavior: bossBehavior,
       drawBody: drawBossShape,
     },
@@ -244,6 +245,34 @@
     healthMul: 4.5, damageMul: 1.5, speedMul: 0.94, radiusMul: 1.35, xpMul: 5,
     tint: '#ffd45e',
   };
+
+  /**
+   * 处决 QTE：Boss 血量见底时不是直接被磨死，而是「跪」一次，
+   * 给玩家一个需要手动兑现的收尾。
+   *
+   * 判定用收缩环：一圈光环从 outer 缩到 inner，玩家要在它压进金色判定带
+   * 的瞬间按键/点击。用半径而不是进度条，是因为环就画在 Boss 身上，
+   * 眼睛不用在角色与 UI 之间来回跳。
+   *
+   * 窗口期间 Boss 免疫伤害 —— 否则全自动武器会在 QTE 结束前把它打死，
+   * 这个设计就白搭了。代价是失手要有真实惩罚：暴怒加速加伤。
+   */
+  const EXECUTE = {
+    threshold: 0.22,    // 血量比例低于此值开窗
+    duration: 2.8,      // 窗口总时长（秒）
+    hitStart: 0.58,     // 判定带起点（占 duration 的比例）
+    hitEnd: 0.80,       // 判定带终点
+    outerRadius: 4.4,   // 收缩环起始半径（相对 Boss 半径）
+    innerRadius: 1.02,  // 收缩环终止半径
+    rageSpeed: 1.22,
+    rageDamage: 1.18,
+    xpBonus: 1.6,       // 处决成功的经验加成
+  };
+
+  /** 收缩环在给定进度下的半径（相对 Boss 半径的倍数） */
+  function executeRingScale(t) {
+    return EXECUTE.outerRadius + (EXECUTE.innerRadius - EXECUTE.outerRadius) * MathUtils.clamp(t, 0, 1);
+  }
 
   /* ------------------------------------------------------------------ *
    * 行为辅助
@@ -508,6 +537,11 @@
       this.phaseName = null;
       this.spiralAngle = 0;
       this._renderLod = 0;
+
+      // 处决 QTE
+      this.qte = null;          // 开窗期间是 { time, duration, armed, ... }
+      this.executeUsed = false; // 一只 Boss 只给一次机会
+      this.enraged = false;
     }
 
     /** 波次成长：二次项让后期真正吃力，前 5 波保持友好 */
@@ -523,8 +557,10 @@
     get isBoss() { return !!this.def.isBoss; }
     get isAlive() { return !this.dead && this.health > 0; }
     get healthPercent() { return MathUtils.clamp(this.health / this.maxHealth, 0, 1); }
-    /** 出生保护期结束前不参与接触伤害 */
-    get canTouch() { return this.spawnGuard <= 0 && this.damage > 0; }
+    /** 出生保护期结束前不参与接触伤害；处决窗口里 Boss 也咬不动人 */
+    get canTouch() { return this.spawnGuard <= 0 && this.damage > 0 && !this.qte; }
+    /** 处决窗口开启中 */
+    get isExecutable() { return !!this.qte; }
 
     angleToPlayer(engine) {
       const target = engine.player.position;
@@ -581,6 +617,12 @@
         // 玩家已死：原地慢慢停下，别继续追一具尸体
         this.velocity.scaleSelf(Math.pow(0.02, dt));
         this.position.addScaledSelf(this.velocity, dt);
+        return;
+      }
+
+      // 处决窗口独占更新：既不跑常规 AI，也不参与群体推挤
+      if (this.qte || this._shouldOpenExecute()) {
+        this._updateExecuteQte(dt, engine);
         return;
       }
 
@@ -671,6 +713,127 @@
       });
     }
 
+    /* ================= 处决 QTE ================= */
+
+    _shouldOpenExecute() {
+      return !!this.def.canExecute
+        && !this.qte
+        && !this.executeUsed
+        && this.spawnGuard <= 0
+        && this.healthPercent <= EXECUTE.threshold;
+    }
+
+    /** 开窗：Boss 跪下、免疫伤害、全场提示 */
+    _openExecuteQte(engine) {
+      this.executeUsed = true;
+      this.qte = {
+        time: 0,
+        duration: EXECUTE.duration,
+        armed: false,     // 收缩环已进入判定带
+        pressed: false,
+      };
+
+      // 清掉进行中的读条，免得 Boss 一边跪一边放技能
+      this.cast = null;
+      this.castTime = 0;
+      this.castFired = false;
+      this.invulnerable = 0;
+      this.stun = 0;
+      this.knockback.set(0, 0);
+      // 硬性锁住：QTE 是一段静止的读招，Boss 不能带着惯性继续滑行
+      this.velocity.set(0, 0);
+
+      engine.activeExecute = this;
+      engine.freeze(0.16);
+      engine.camera.addTrauma(0.5);
+      engine.particles.shockwave(this.position.x, this.position.y, {
+        size: this.radius, endSize: this.radius * EXECUTE.outerRadius * 2,
+        color: this.def.accent, life: 0.5,
+      });
+      if (engine.hud) engine.hud.showBanner(`${this.def.name} 露出破绽 · 按 E 或点击`, '处决窗口');
+      engine.events.emit('boss:qte:open', this);
+    }
+
+    _updateExecuteQte(dt, engine) {
+      if (!this.qte) this._openExecuteQte(engine);
+
+      const qte = this.qte;
+      qte.time += dt;
+      const t = qte.time / qte.duration;
+
+      // 原地刹停并抖动，读起来就是「站不稳」
+      this.desired.set(0, 0);
+      this.velocity.scaleSelf(Math.pow(0.004, dt));
+      this.position.addScaledSelf(this.velocity, dt);
+
+      if (!qte.armed && t >= EXECUTE.hitStart) {
+        qte.armed = true;
+        if (engine.audio) engine.audio.play('qteTick', { force: true });
+      }
+
+      if (this._executeInputPressed(engine)) {
+        this._resolveExecute(engine, qte.armed && t <= EXECUTE.hitEnd);
+        return;
+      }
+      if (t >= 1) this._resolveExecute(engine, false);
+    }
+
+    /** 键盘（E / F / 回车）与点击都算一次尝试 */
+    _executeInputPressed(engine) {
+      const input = engine.input;
+      if (!input) return false;
+      if (input.wasPressed && input.wasPressed('execute')) return true;
+      return !!(input.wasPointerPressed && input.wasPointerPressed());
+    }
+
+    _resolveExecute(engine, success) {
+      this.qte = null;
+      if (engine.activeExecute === this) engine.activeExecute = null;
+
+      if (success) {
+        this.xpValue = Math.round(this.xpValue * EXECUTE.xpBonus);
+
+        engine.freeze(0.34);
+        engine.camera.addTrauma(1);
+        engine.particles.shockwave(this.position.x, this.position.y, {
+          size: this.radius * 0.5, endSize: this.radius * 12, color: '#ffffff', life: 0.5,
+        });
+        engine.floatingText.spawn(this.position.x, this.position.y - this.radius - 30, '处决!', {
+          color: '#ffd45e', size: 34, life: 1.6,
+        });
+        engine.events.emit('boss:qte:success', this);
+
+        // 绕开 takeDamage 的护甲与无敌判定：处决就是处决
+        this.health = 0;
+        this._die();
+        return;
+      }
+
+      // 失手：暴怒，并立刻接一次技能，让代价立即兑现
+      this.enraged = true;
+      this.speed *= EXECUTE.rageSpeed;
+      this.damageScale *= EXECUTE.rageDamage;
+      this.damage = this.def.damage * this.damageScale;
+      this.invulnerable = 0.5;
+      this.timer = 0.35;
+
+      engine.camera.addTrauma(0.6);
+      engine.particles.burst(this.position.x, this.position.y, 34, {
+        colors: [this.def.color, '#ff9ebb', '#ffffff'],
+        speedMin: 120, speedMax: 420, lifeMin: 0.3, lifeMax: 0.8, drag: 0.9,
+      });
+      engine.floatingText.spawn(this.position.x, this.position.y - this.radius - 24, '暴怒', {
+        color: '#ff4d6d', size: 26, life: 1.2,
+      });
+      if (engine.hud) engine.hud.showBanner(`${this.def.name} 挣脱了处决`, '暴怒');
+      engine.events.emit('boss:qte:fail', this);
+    }
+
+    /** 实体被移出世界时（含重开一局的清场）撤下全局引用 */
+    onRemove(engine) {
+      if (engine && engine.activeExecute === this) engine.activeExecute = null;
+    }
+
     /* ================= 攻击 ================= */
 
     fireBullet(engine, angle, speed, damage) {
@@ -714,6 +877,8 @@
      */
     takeDamage(amount, options = {}) {
       if (this.dead || this.invulnerable > 0) return 0;
+      // 处决窗口里免疫一切伤害，否则全自动武器会在玩家按键前先把 Boss 磨死
+      if (this.qte) return 0;
 
       // 护甲按固定值减，但至少保留 15%，避免高护甲完全免疫小额伤害
       const dealt = options.ignoreArmor
@@ -859,12 +1024,17 @@
 
       ctx.save();
       ctx.translate(this.position.x, this.position.y);
+      // 处决窗口里持续小幅抖动，看上去就是站不住了
+      if (this.qte) {
+        ctx.translate(Math.sin(this.age * 47) * 3.2, Math.cos(this.age * 39) * 2.4);
+        ctx.rotate(Math.sin(this.age * 11) * 0.07);
+      }
       ctx.scale(scale, scale);
 
       ctx.shadowColor = this.elite ? ELITE.tint : def.color;
       ctx.shadowBlur = this.isBoss ? 34 : this.elite ? 26 : 13;
       ctx.fillStyle = this.hitFlash > 0.05 ? '#ffffff' : def.color;
-      ctx.strokeStyle = this.elite ? ELITE.tint : def.accent;
+      ctx.strokeStyle = this.qte ? '#ffffff' : this.elite ? ELITE.tint : def.accent;
       ctx.lineWidth = this.elite ? 3 : 2;
 
       def.drawBody(this, ctx, this.radius);
@@ -874,8 +1044,70 @@
       ctx.restore();
 
       this._drawStatusRings(ctx);
+      if (this.qte) this._drawExecuteQte(ctx);
       // Boss 有屏幕顶部的专属血条，世界里不再重复画
       if (this.health < this.maxHealth && !this.isBoss) this._drawHealthBar(ctx, scale);
+    }
+
+    /**
+     * 处决 QTE 的读招界面，全部画在 Boss 身上：
+     * 金色判定带是固定的靶，白色收缩环是移动的针，针压进带子里就按。
+     */
+    _drawExecuteQte(ctx) {
+      const qte = this.qte;
+      const t = MathUtils.clamp(qte.time / qte.duration, 0, 1);
+      const r = this.radius;
+      const bandOuter = r * executeRingScale(EXECUTE.hitStart);
+      const bandInner = r * executeRingScale(EXECUTE.hitEnd);
+      const ring = r * executeRingScale(t);
+      const inBand = t >= EXECUTE.hitStart && t <= EXECUTE.hitEnd;
+
+      ctx.save();
+      ctx.translate(this.position.x, this.position.y);
+
+      // 判定带：命中区间对应的圆环
+      ctx.globalAlpha = inBand ? 0.42 : 0.2;
+      ctx.fillStyle = '#ffd45e';
+      ctx.beginPath();
+      ctx.arc(0, 0, bandOuter, 0, TAU);
+      ctx.arc(0, 0, bandInner, 0, TAU, true);
+      ctx.fill();
+
+      ctx.globalAlpha = inBand ? 1 : 0.6;
+      ctx.strokeStyle = '#ffd45e';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, bandOuter, 0, TAU);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, bandInner, 0, TAU);
+      ctx.stroke();
+
+      // 收缩环
+      ctx.globalAlpha = 1;
+      ctx.shadowColor = inBand ? '#ffffff' : '#7cf9ff';
+      ctx.shadowBlur = inBand ? 26 : 12;
+      ctx.strokeStyle = inBand ? '#ffffff' : '#7cf9ff';
+      ctx.lineWidth = inBand ? 6 : 3.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, ring, 0, TAU);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // 按键提示：进入判定带时放大跳动
+      const promptY = -r * EXECUTE.outerRadius - 18;
+      const bump = inBand ? 1.15 + Math.sin(this.age * 30) * 0.12 : 1;
+      ctx.globalAlpha = 0.92;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = inBand ? '#ffffff' : '#ffd45e';
+      ctx.font = `900 ${Math.round(26 * bump)}px "Orbitron", "Rajdhani", system-ui, sans-serif`;
+      ctx.fillText('E', 0, promptY);
+      ctx.font = '700 13px "Rajdhani", system-ui, sans-serif';
+      ctx.fillStyle = '#dceaf7';
+      ctx.fillText('按 E 或点击处决', 0, promptY + 20);
+
+      ctx.restore();
     }
 
     _drawLod(ctx, scale, lod) {
@@ -956,7 +1188,9 @@
 
   Enemy.TYPES = ENEMY_TYPES;
   Enemy.ELITE = ELITE;
+  Enemy.EXECUTE = EXECUTE;
   Enemy.BOSS_PHASES = BOSS_PHASES;
+  Enemy.executeRingScale = executeRingScale;
 
   global.Enemy = Enemy;
   global.ENEMY_TYPES = ENEMY_TYPES;

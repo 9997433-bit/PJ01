@@ -17,6 +17,9 @@
     dash: ['ShiftLeft', 'ShiftRight', 'Space'],
     pause: ['Escape', 'KeyP'],
     confirm: ['Enter', 'NumpadEnter'],
+    // 处决 QTE：刻意避开 Space，否则会和冲刺抢同一次按键
+    execute: ['KeyE', 'KeyF', 'Enter', 'NumpadEnter'],
+    mute: ['KeyM'],
   };
 
   // 这些键在游戏中会触发页面滚动，需要吞掉默认行为
@@ -42,6 +45,8 @@
       this.pointerWorld = new global.Vector2(0, 0);
       this.pointerDown = false;
       this.hasTouch = false;
+      /** 本帧内是否有一次「按下」边沿，供点击型交互（处决 QTE）查询 */
+      this._pointerPressedThisFrame = false;
 
       this.joystick = {
         active: false,
@@ -82,6 +87,7 @@
       this._onPointerDown = (e) => {
         if (!this.enabled) return;
         this.pointerDown = true;
+        this._pointerPressedThisFrame = true;
         this._updatePointer(e);
         if (e.pointerType === 'touch' || e.pointerType === 'pen') {
           this.hasTouch = true;
@@ -251,12 +257,14 @@
     endFrame() {
       this._pressedThisFrame.clear();
       this._releasedThisFrame.clear();
+      this._pointerPressedThisFrame = false;
     }
 
     reset() {
       this._down.clear();
       this._pressedThisFrame.clear();
       this._releasedThisFrame.clear();
+      this._pointerPressedThisFrame = false;
       this.moveAxis.set(0, 0);
       this._endJoystick();
     }
@@ -281,6 +289,8 @@
 
     isKeyDown(code) { return this._down.has(code); }
     wasKeyPressed(code) { return this._pressedThisFrame.has(code); }
+    /** 本帧是否有一次指针按下（鼠标点击 / 触摸），与键盘 wasPressed 语义一致 */
+    wasPointerPressed() { return this.enabled && this._pointerPressedThisFrame; }
   }
 
   InputManager.KEY_BINDINGS = KEY_BINDINGS;
