@@ -1138,8 +1138,11 @@ body.is-fever .stat__value { color: var(--gold); }
 }
 #hud[data-layout="compact"] .combo__value,
 #hud[data-layout="portrait"] .combo__value { font-size: 24px; }
+/* 小屏放不下文字标签，Fever 充能只留那条金色进度条 */
 #hud[data-layout="compact"] .combo__label,
-#hud[data-layout="portrait"] .combo__label { display: none; }
+#hud[data-layout="portrait"] .combo__label,
+#hud[data-layout="compact"] .combo__fever-label,
+#hud[data-layout="portrait"] .combo__fever-label { display: none; }
 
 @media (max-width: 860px) {
   .cards { grid-template-columns: 1fr; gap: 12px; }
