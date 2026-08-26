@@ -36,6 +36,34 @@
   });
 
   const MAX_DELTA = 1 / 20; // 单帧最多推进 50ms
+  const FPS_WINDOW = 120;
+  const QUALITY_CHECK_INTERVAL = 0.5;
+  const QUALITY_PROFILES = Object.freeze([
+    Object.freeze({
+      name: 'high',
+      particleEmission: 1,
+      particleRender: 1,
+      renderStride: 1,
+      lodBias: 0,
+      sortEntities: true,
+    }),
+    Object.freeze({
+      name: 'balanced',
+      particleEmission: 0.62,
+      particleRender: 0.7,
+      renderStride: 1,
+      lodBias: 1,
+      sortEntities: true,
+    }),
+    Object.freeze({
+      name: 'performance',
+      particleEmission: 0.34,
+      particleRender: 0.42,
+      renderStride: 2,
+      lodBias: 2,
+      sortEntities: false,
+    }),
+  ]);
 
   class GameEngine {
     constructor(canvas, options = {}) {
@@ -45,7 +73,7 @@
       this.events = new global.EventBus();
       this.camera = new global.Camera({ smoothing: 0.0016, lookAhead: 70 });
       this.input = options.input || null;
-      this.particles = new global.ParticleSystem(options.particleCapacity || 1400);
+      this.particles = new global.ParticleSystem(options.particleCapacity || 3000);
       this.floatingText = new global.FloatingTextSystem(90);
       this.grid = new global.SpatialGrid(options.cellSize || 110);
       this.background = null;
@@ -66,6 +94,25 @@
       this.timeScale = 1;
       this.hitStop = 0;
       this.fps = 60;
+      this.renderedFrameCount = 0;
+      this.skippedRenderCount = 0;
+
+      this.quality = {
+        adaptive: options.adaptiveQuality !== false,
+        targetFps: options.targetFps || 60,
+        level: 0,
+        name: QUALITY_PROFILES[0].name,
+        renderStride: 1,
+        lodBias: 0,
+        sortEntities: true,
+      };
+      this._fpsSamples = new Float32Array(FPS_WINDOW);
+      this._fpsSampleCount = 0;
+      this._fpsSampleCursor = 0;
+      this._fpsSampleTotal = 0;
+      this._qualityCheckElapsed = 0;
+      this._slowWindows = 0;
+      this._fastWindows = 0;
 
       this.width = 0;
       this.height = 0;
@@ -79,6 +126,7 @@
       this._setupResize();
       this._setupVisibility();
       this.resize();
+      this._applyQualityProfile(0, 'initial');
     }
 
     /* ================= 画布自适应 ================= */
@@ -186,7 +234,7 @@
       this._lastTimestamp = timestamp;
       this.rawDelta = rawDelta;
       this.frameCount++;
-      this.fps += (1 / Math.max(rawDelta, 1e-4) - this.fps) * 0.08;
+      this._monitorFps(rawDelta);
 
       let scale = this.timeScale;
       if (this.hitStop > 0) {
@@ -196,7 +244,96 @@
       this.deltaTime = rawDelta * scale;
 
       this.update(this.deltaTime, rawDelta);
-      this.render();
+      const stride = this.state === GameState.PLAYING ? this.quality.renderStride : 1;
+      if (stride === 1 || this.frameCount % stride === 0) {
+        this.render();
+        this.renderedFrameCount++;
+      } else {
+        this.skippedRenderCount++;
+      }
+    }
+
+    /**
+     * 使用无分配的滚动窗口监控 FPS，并以迟滞策略切换画质。
+     * 低于目标时快速降级，恢复则需要连续多个稳定窗口，避免档位抖动。
+     */
+    _monitorFps(rawDelta) {
+      if (!(rawDelta > 0)) return;
+
+      const frameMs = Math.min(250, rawDelta * 1000);
+      if (this._fpsSampleCount < FPS_WINDOW) {
+        this._fpsSampleCount++;
+      } else {
+        this._fpsSampleTotal -= this._fpsSamples[this._fpsSampleCursor];
+      }
+      this._fpsSamples[this._fpsSampleCursor] = frameMs;
+      this._fpsSampleTotal += frameMs;
+      this._fpsSampleCursor = (this._fpsSampleCursor + 1) % FPS_WINDOW;
+      this.fps = this._fpsSampleTotal > 0
+        ? (1000 * this._fpsSampleCount) / this._fpsSampleTotal
+        : this.quality.targetFps;
+
+      if (!this.quality.adaptive || this.state !== GameState.PLAYING) return;
+      this._qualityCheckElapsed += rawDelta;
+      if (this._qualityCheckElapsed < QUALITY_CHECK_INTERVAL) return;
+      this._qualityCheckElapsed = 0;
+
+      const target = this.quality.targetFps;
+      const level = this.quality.level;
+      const severe = this.fps < target * 0.68;
+      const slow = this.fps < target - (level === 0 ? 8 : 13);
+      const fast = this.fps >= target - 2;
+
+      this._slowWindows = slow ? this._slowWindows + 1 : 0;
+      this._fastWindows = fast ? this._fastWindows + 1 : 0;
+
+      if (level < QUALITY_PROFILES.length - 1 && (severe || this._slowWindows >= 2)) {
+        this.setQualityLevel(severe ? QUALITY_PROFILES.length - 1 : level + 1, 'fps-low');
+      } else if (level > 0 && this._fastWindows >= 6) {
+        this.setQualityLevel(level - 1, 'fps-recovered');
+      }
+    }
+
+    setQualityLevel(level, reason = 'manual') {
+      const next = Math.max(0, Math.min(QUALITY_PROFILES.length - 1, Math.round(level)));
+      if (next === this.quality.level && reason !== 'initial') return false;
+      this._applyQualityProfile(next, reason);
+      return true;
+    }
+
+    _applyQualityProfile(level, reason) {
+      const profile = QUALITY_PROFILES[level];
+      const previous = this.quality.name;
+      this.quality.level = level;
+      this.quality.name = profile.name;
+      this.quality.renderStride = profile.renderStride;
+      this.quality.lodBias = profile.lodBias;
+      this.quality.sortEntities = profile.sortEntities;
+      this._slowWindows = 0;
+      this._fastWindows = 0;
+      if (this.particles.setQuality) {
+        this.particles.setQuality(profile.particleEmission, profile.particleRender);
+      }
+      if (reason !== 'initial') {
+        this.events.emit('performance:quality', {
+          from: previous,
+          to: profile.name,
+          level,
+          fps: this.fps,
+          reason,
+        });
+      }
+    }
+
+    getPerformanceSnapshot() {
+      return {
+        fps: this.fps,
+        quality: this.quality.name,
+        qualityLevel: this.quality.level,
+        renderedFrames: this.renderedFrameCount,
+        skippedFrames: this.skippedRenderCount,
+        particles: this.particles.activeCount,
+      };
     }
 
     /** 命中定格，单位秒 */
@@ -292,16 +429,22 @@
       for (let i = 0; i < this.entities.length; i++) {
         const entity = this.entities[i];
         if (!entity.visible || entity.dead) continue;
-        if (!this.camera.isVisible(entity.position, entity.radius + 80)) continue;
+        if (entity.shouldRender) {
+          if (!entity.shouldRender(this.camera, this)) continue;
+        } else if (!this.camera.isVisible(entity.position, entity.radius + 80)) {
+          continue;
+        }
         drawList.push(entity);
       }
-      drawList.sort((a, b) => (a.layer - b.layer) || (a.position.y - b.position.y));
+      if (this.quality.sortEntities) {
+        drawList.sort((a, b) => (a.layer - b.layer) || (a.position.y - b.position.y));
+      }
 
       for (let i = 0; i < drawList.length; i++) {
         drawList[i].draw(ctx, this);
       }
 
-      this.particles.draw(ctx, this.camera);
+      this.particles.draw(ctx, this.camera, this.frameCount);
       this.floatingText.draw(ctx, this.camera);
 
       for (let i = 0; i < this.systems.length; i++) {
@@ -404,6 +547,12 @@
       this.elapsed = 0;
       this.timeScale = 1;
       this.hitStop = 0;
+      this._fpsSampleCount = 0;
+      this._fpsSampleCursor = 0;
+      this._fpsSampleTotal = 0;
+      this._qualityCheckElapsed = 0;
+      this.fps = this.quality.targetFps;
+      this.setQualityLevel(0, 'reset');
       for (const system of this.systems) {
         if (system.reset) system.reset(this);
       }
@@ -412,6 +561,7 @@
 
   GameEngine.GameState = GameState;
   GameEngine.Layer = Layer;
+  GameEngine.QUALITY_PROFILES = QUALITY_PROFILES;
   global.GameEngine = GameEngine;
   global.GameState = GameState;
   global.Layer = Layer;

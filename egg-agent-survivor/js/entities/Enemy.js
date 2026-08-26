@@ -507,6 +507,7 @@
       this.castFired = false;
       this.phaseName = null;
       this.spiralAngle = 0;
+      this._renderLod = 0;
     }
 
     /** 波次成长：二次项让后期真正吃力，前 5 波保持友好 */
@@ -528,6 +529,39 @@
     angleToPlayer(engine) {
       const target = engine.player.position;
       return Math.atan2(target.y - this.position.y, target.x - this.position.x);
+    }
+
+    /**
+     * 敌人专用视锥剔除与 LOD 选择。Boss 的读招必须完整保留；普通敌人越靠近
+     * 屏幕边缘、画质档位越低，越早切换为无阴影的简化轮廓。
+     */
+    shouldRender(camera, engine) {
+      const margin = this.isBoss ? this.radius + 64 : this.radius * 1.35;
+      const halfWidth = camera.viewportWidth / (2 * camera.zoom) + margin;
+      const halfHeight = camera.viewportHeight / (2 * camera.zoom) + margin;
+      const dx = this.position.x - camera.position.x;
+      const dy = this.position.y - camera.position.y;
+      if (Math.abs(dx) > halfWidth || Math.abs(dy) > halfHeight) {
+        this._renderLod = 2;
+        return false;
+      }
+
+      if (this.isBoss) {
+        this._renderLod = 0;
+        return true;
+      }
+
+      const qualityBias = engine && engine.quality ? engine.quality.lodBias : 0;
+      const viewport = Math.min(camera.viewportWidth, camera.viewportHeight) / camera.zoom;
+      const fullDistance = Math.max(180, viewport * 0.42)
+        * (qualityBias === 0 ? 1 : qualityBias === 1 ? 0.82 : 0.68);
+      const distanceSq = dx * dx + dy * dy;
+      const farDistance = fullDistance * (this.elite ? 1.65 : 1.35);
+
+      if (distanceSq <= fullDistance * fullDistance) this._renderLod = 0;
+      else if (this.elite || distanceSq <= farDistance * farDistance) this._renderLod = 1;
+      else this._renderLod = 2;
+      return true;
     }
 
     /* ================= 更新 ================= */
@@ -817,6 +851,10 @@
       if (scale <= 0.01) return;
 
       const def = this.def;
+      if (this._renderLod > 0) {
+        this._drawLod(ctx, scale, this._renderLod);
+        return;
+      }
       this.drawShadow(ctx, scale, 0.28);
 
       ctx.save();
@@ -838,6 +876,25 @@
       this._drawStatusRings(ctx);
       // Boss 有屏幕顶部的专属血条，世界里不再重复画
       if (this.health < this.maxHealth && !this.isBoss) this._drawHealthBar(ctx, scale);
+    }
+
+    _drawLod(ctx, scale, lod) {
+      const radiusX = this.radius * scale * (lod === 1 ? 0.86 : 0.78);
+      const radiusY = this.radius * scale * (lod === 1 ? 1.05 : 0.94);
+      ctx.save();
+      ctx.globalAlpha = lod === 1 ? 0.94 : 0.82;
+      ctx.fillStyle = this.hitFlash > 0.05 ? '#ffffff' : this.def.color;
+      ctx.beginPath();
+      ctx.ellipse(this.position.x, this.position.y, radiusX, radiusY, 0, 0, TAU);
+      ctx.fill();
+
+      if (lod === 1) {
+        ctx.strokeStyle = this.elite ? ELITE.tint : this.def.accent;
+        ctx.lineWidth = this.elite ? 2.5 : 1.5;
+        ctx.stroke();
+        if (this.health < this.maxHealth) this._drawHealthBar(ctx, scale);
+      }
+      ctx.restore();
     }
 
     _drawEyes(ctx) {

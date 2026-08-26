@@ -12,6 +12,8 @@
   class Particle {
     constructor() {
       this.active = false;
+      this._poolIndex = -1;
+      this._activeSlot = -1;
       this.x = 0; this.y = 0;
       this.vx = 0; this.vy = 0;
       this.life = 0; this.maxLife = 1;
@@ -28,33 +30,87 @@
   }
 
   class ParticleSystem {
-    constructor(capacity = 1400) {
-      this.capacity = capacity;
-      this.pool = new Array(capacity);
-      for (let i = 0; i < capacity; i++) this.pool[i] = new Particle();
-      this._cursor = 0;
+    constructor(capacity = 3000) {
+      this.capacity = Math.max(1, Math.floor(capacity));
+      this.pool = new Array(this.capacity);
+      this._activeIndices = new Int32Array(this.capacity);
+      this._freeIndices = new Int32Array(this.capacity);
+      for (let i = 0; i < this.capacity; i++) {
+        const particle = new Particle();
+        particle._poolIndex = i;
+        this.pool[i] = particle;
+        this._freeIndices[i] = this.capacity - i - 1;
+      }
+      this._freeCount = this.capacity;
+      this._overflowCursor = 0;
       this.activeCount = 0;
+      this.emissionScale = 1;
+      this.renderScale = 1;
+      this.activeLimit = this.capacity;
+
+      // 批次按 shape / color / alpha / lineWidth 缓存，运行期只复用数组。
+      this._batchMap = new Map();
+      this._batches = [];
+      this.lastDrawCount = 0;
+      this.lastBatchCount = 0;
     }
 
     clear() {
-      for (let i = 0; i < this.capacity; i++) this.pool[i].active = false;
-      this.activeCount = 0;
-    }
-
-    /** 取一个空闲粒子；池满时覆盖最老的一个（视觉上无感） */
-    _acquire() {
-      for (let i = 0; i < this.capacity; i++) {
-        const p = this.pool[this._cursor];
-        this._cursor = (this._cursor + 1) % this.capacity;
-        if (!p.active) return p;
+      for (let slot = 0; slot < this.activeCount; slot++) {
+        const index = this._activeIndices[slot];
+        const particle = this.pool[index];
+        particle.active = false;
+        particle._activeSlot = -1;
       }
-      const fallback = this.pool[this._cursor];
-      this._cursor = (this._cursor + 1) % this.capacity;
-      return fallback;
+      for (let i = 0; i < this.capacity; i++) this._freeIndices[i] = this.capacity - i - 1;
+      this._freeCount = this.capacity;
+      this.activeCount = 0;
+      this._overflowCursor = 0;
+      this.lastDrawCount = 0;
+      this.lastBatchCount = 0;
     }
 
-    emit(options) {
-      const p = this._acquire();
+    setQuality(emissionScale = 1, renderScale = 1) {
+      this.emissionScale = MathUtils.clamp(emissionScale, 0.1, 1);
+      this.renderScale = MathUtils.clamp(renderScale, 0.1, 1);
+      this.activeLimit = Math.max(64, Math.floor(this.capacity * this.emissionScale));
+    }
+
+    /** O(1) 取空闲粒子；池满时覆盖一个已有粒子。 */
+    _acquire(essential = false) {
+      if (!essential && this.activeCount >= this.activeLimit) return null;
+
+      if (this._freeCount > 0) {
+        const index = this._freeIndices[--this._freeCount];
+        const particle = this.pool[index];
+        particle._activeSlot = this.activeCount;
+        this._activeIndices[this.activeCount++] = index;
+        return particle;
+      }
+
+      const slot = this._overflowCursor++ % this.activeCount;
+      return this.pool[this._activeIndices[slot]];
+    }
+
+    _releaseAt(slot) {
+      const index = this._activeIndices[slot];
+      const particle = this.pool[index];
+      const lastSlot = this.activeCount - 1;
+      const lastIndex = this._activeIndices[lastSlot];
+
+      particle.active = false;
+      particle._activeSlot = -1;
+      if (slot !== lastSlot) {
+        this._activeIndices[slot] = lastIndex;
+        this.pool[lastIndex]._activeSlot = slot;
+      }
+      this.activeCount = lastSlot;
+      this._freeIndices[this._freeCount++] = index;
+    }
+
+    emit(options, essential = false) {
+      const p = this._acquire(essential);
+      if (!p) return null;
       p.active = true;
       p.x = options.x || 0;
       p.y = options.y || 0;
@@ -83,7 +139,8 @@
       const baseAngle = options.angle !== undefined ? options.angle : Math.random() * Math.PI * 2;
       const colors = options.colors || [options.color || '#7cf9ff'];
 
-      for (let i = 0; i < count; i++) {
+      const scaledCount = Math.max(1, Math.round(count * this.emissionScale));
+      for (let i = 0; i < scaledCount; i++) {
         const angle = baseAngle + (Math.random() - 0.5) * spread;
         const speed = MathUtils.randRange(speedMin, speedMax);
         this.emit({
@@ -115,18 +172,17 @@
         alpha: options.alpha !== undefined ? options.alpha : 0.9,
         drag: 1,
         shape: 'ring',
-      });
+      }, true);
     }
 
     update(dt) {
-      let active = 0;
-      for (let i = 0; i < this.capacity; i++) {
-        const p = this.pool[i];
-        if (!p.active) continue;
+      let slot = 0;
+      while (slot < this.activeCount) {
+        const p = this.pool[this._activeIndices[slot]];
 
         p.life -= dt;
         if (p.life <= 0) {
-          p.active = false;
+          this._releaseAt(slot);
           continue;
         }
 
@@ -138,54 +194,111 @@
         p.x += p.vx * dt;
         p.y += p.vy * dt;
         p.rotation += p.spin * dt;
-        active++;
+        slot++;
       }
-      this.activeCount = active;
     }
 
     /** 需在相机变换已应用的上下文中调用 */
-    draw(ctx, camera) {
-      if (this.activeCount === 0) return;
-      ctx.save();
-      ctx.globalCompositeOperation = 'lighter';
+    draw(ctx, camera, frameId = 0) {
+      if (this.activeCount === 0) {
+        this.lastDrawCount = 0;
+        this.lastBatchCount = 0;
+        return;
+      }
 
-      for (let i = 0; i < this.capacity; i++) {
-        const p = this.pool[i];
-        if (!p.active) continue;
+      for (let i = 0; i < this._batches.length; i++) {
+        this._batches[i].indices.length = 0;
+      }
+
+      let drawCount = 0;
+      for (let slot = 0; slot < this.activeCount; slot++) {
+        const index = this._activeIndices[slot];
+        const p = this.pool[index];
+        // 固定哈希采样可降低绘制量，同时避免每帧随机抽样造成闪烁。
+        if (this.renderScale < 0.999) {
+          const hash = Math.imul(index + 1, 2654435761) >>> 0;
+          if (hash / 4294967296 > this.renderScale) continue;
+        }
         if (camera && !camera.isVisible(p, 160)) continue;
 
-        const t = p.life / p.maxLife;          // 1 → 0
+        const t = p.life / p.maxLife;
         const size = p.endSize
           ? MathUtils.lerp(p.endSize, p.size, t)
           : p.size * t;
         if (size <= 0.15) continue;
 
-        ctx.globalAlpha = Math.min(1, p.alpha * t);
-        ctx.fillStyle = p.color;
-        ctx.strokeStyle = p.color;
+        const alpha = Math.min(1, p.alpha * t);
+        const alphaBucket = Math.max(1, Math.min(4, Math.ceil(alpha * 4)));
+        const width = p.shape === 'ring'
+          ? Math.max(1, Math.round(5 * t))
+          : p.shape === 'spark'
+            ? Math.max(1, Math.round(size * 0.6))
+            : 0;
+        const batch = this._getBatch(p.shape, p.color, alphaBucket, width);
+        batch.indices.push(index);
+        drawCount++;
+      }
 
-        if (p.shape === 'ring') {
-          ctx.lineWidth = Math.max(1, 5 * t);
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
-          ctx.stroke();
-        } else if (p.shape === 'spark') {
-          const len = size * p.stretch * 2.4;
-          const angle = Math.atan2(p.vy, p.vx);
-          ctx.lineWidth = Math.max(1, size * 0.6);
-          ctx.lineCap = 'round';
-          ctx.beginPath();
-          ctx.moveTo(p.x, p.y);
-          ctx.lineTo(p.x - Math.cos(angle) * len, p.y - Math.sin(angle) * len);
-          ctx.stroke();
-        } else {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
-          ctx.fill();
+      if (drawCount === 0) {
+        this.lastDrawCount = 0;
+        this.lastBatchCount = 0;
+        return;
+      }
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
+
+      let batchCount = 0;
+      for (let i = 0; i < this._batches.length; i++) {
+        const batch = this._batches[i];
+        if (batch.indices.length === 0) continue;
+        batchCount++;
+        ctx.globalAlpha = batch.alphaBucket * 0.25;
+        ctx.fillStyle = batch.color;
+        ctx.strokeStyle = batch.color;
+        if (batch.width) ctx.lineWidth = batch.width;
+        ctx.beginPath();
+
+        for (let j = 0; j < batch.indices.length; j++) {
+          const p = this.pool[batch.indices[j]];
+          const t = p.life / p.maxLife;
+          const size = p.endSize
+            ? MathUtils.lerp(p.endSize, p.size, t)
+            : p.size * t;
+
+          if (batch.shape === 'ring') {
+            ctx.moveTo(p.x + size, p.y);
+            ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+          } else if (batch.shape === 'spark') {
+            const length = size * p.stretch * 2.4;
+            const speed = Math.hypot(p.vx, p.vy) || 1;
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p.x - (p.vx / speed) * length, p.y - (p.vy / speed) * length);
+          } else {
+            ctx.moveTo(p.x + size, p.y);
+            ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+          }
         }
+
+        if (batch.shape === 'circle') ctx.fill();
+        else ctx.stroke();
       }
 
       ctx.restore();
+      this.lastDrawCount = drawCount;
+      this.lastBatchCount = batchCount;
+    }
+
+    _getBatch(shape, color, alphaBucket, width) {
+      const key = `${shape}|${color}|${alphaBucket}|${width}`;
+      let batch = this._batchMap.get(key);
+      if (!batch) {
+        batch = { shape, color, alphaBucket, width, indices: [] };
+        this._batchMap.set(key, batch);
+        this._batches.push(batch);
+      }
+      return batch;
     }
   }
 

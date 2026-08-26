@@ -113,7 +113,7 @@
       isolation: isolate;
     }
 
-    canvas {
+    #benchmark-canvas {
       display: block;
       width: 100%;
       height: 100%;
@@ -128,7 +128,7 @@
       top: 14px;
       left: 14px;
       display: grid;
-      grid-template-columns: repeat(4, minmax(76px, 1fr));
+      grid-template-columns: repeat(5, minmax(76px, 1fr));
       gap: 8px;
       pointer-events: none;
     }
@@ -172,6 +172,34 @@
       color: #bdcde0;
       font-size: 12px;
       pointer-events: none;
+    }
+
+    .fps-chart-panel {
+      position: absolute;
+      z-index: 2;
+      right: 14px;
+      top: 14px;
+      width: min(360px, calc(100% - 28px));
+      padding: 8px 10px 10px;
+      border: 1px solid rgba(142, 190, 255, 0.18);
+      border-radius: 11px;
+      background: rgba(6, 15, 27, 0.78);
+      pointer-events: none;
+    }
+
+    .fps-chart-panel span {
+      display: block;
+      margin-bottom: 4px;
+      color: #8da6c2;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    #fps-chart {
+      display: block;
+      width: 100%;
+      height: 82px;
     }
 
     footer {
@@ -224,6 +252,14 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
+      .fps-chart-panel {
+        top: auto;
+        right: 10px;
+        bottom: 48px;
+        left: 10px;
+        width: auto;
+      }
+
       .stat {
         min-width: 0;
       }
@@ -241,6 +277,7 @@
       <button type="button" data-enemy-count="300" aria-pressed="false">300 敌人</button>
       <button type="button" data-enemy-count="500" aria-pressed="false">500 敌人</button>
       <button type="button" class="primary" id="run-all">依次测试</button>
+      <button type="button" class="danger" id="run-stress">500 敌人压测</button>
       <button type="button" class="danger" id="stop">停止采样</button>
     </div>
   </header>
@@ -250,8 +287,13 @@
     <section class="stats" aria-live="polite">
       <div class="stat"><span>实时 FPS</span><strong id="fps">--</strong></div>
       <div class="stat"><span>敌人数</span><strong id="enemy-count">100</strong></div>
+      <div class="stat"><span>活跃粒子</span><strong id="particle-count">0</strong></div>
       <div class="stat"><span>P95 帧耗时</span><strong id="p95">--</strong></div>
       <div class="stat"><span>JS Heap</span><strong id="heap">N/A</strong></div>
+    </section>
+    <section class="fps-chart-panel" aria-label="FPS 历史图">
+      <span>FPS 图表 · 目标线 60</span>
+      <canvas id="fps-chart" width="680" height="164"></canvas>
     </section>
     <div class="status" id="status">持续渲染中。选择敌人数，或点击“依次测试”生成可比较结果。</div>
   </main>
@@ -266,15 +308,16 @@
           <th>P95 帧耗时</th>
           <th>卡顿帧 &gt; 50ms</th>
           <th>采样帧数</th>
+          <th>粒子数</th>
           <th>画布像素</th>
         </tr>
       </thead>
       <tbody id="results">
-        <tr><td class="empty" colspan="7">尚未运行完整采样</td></tr>
+        <tr><td class="empty" colspan="8">尚未运行完整采样</td></tr>
       </tbody>
     </table>
     <p class="hint">
-      自动测试默认预热 1.5 秒、每组采样 5 秒。后台标签页会暂停采样；结果受设备刷新率与浏览器节流策略影响。
+      “500 敌人压测”额外叠加 3000 个批量粒子。自动测试默认预热 1.5 秒、每组采样 5 秒；后台标签页会暂停采样。
     </p>
   </footer>
 
@@ -287,10 +330,13 @@
       const WARMUP_MS = clampNumber(params.get('warmup'), 1500, 250, 10000);
       const SAMPLE_MS = clampNumber(params.get('duration'), 5000, 1000, 60000);
       const canvas = document.querySelector('#benchmark-canvas');
+      const chartCanvas = document.querySelector('#fps-chart');
       const arena = document.querySelector('#arena');
       const context = canvas.getContext('2d', { alpha: false, desynchronized: true });
+      const chartContext = chartCanvas.getContext('2d', { alpha: false });
       const fpsOutput = document.querySelector('#fps');
       const countOutput = document.querySelector('#enemy-count');
+      const particleOutput = document.querySelector('#particle-count');
       const p95Output = document.querySelector('#p95');
       const heapOutput = document.querySelector('#heap');
       const statusOutput = document.querySelector('#status');
@@ -302,9 +348,13 @@
         cssHeight: 1,
         pixelRatio: 1,
         enemies: [],
+        particles: [],
         enemyCount: 100,
+        stressMode: false,
         lastFrameAt: 0,
         rollingFrameTimes: [],
+        fpsHistory: [],
+        lastChartAt: 0,
         sample: null,
         queue: [],
         results: [],
@@ -344,6 +394,10 @@
           0,
           0,
         );
+        const chartBounds = chartCanvas.getBoundingClientRect();
+        chartCanvas.width = Math.max(1, Math.round(chartBounds.width * state.pixelRatio));
+        chartCanvas.height = Math.max(1, Math.round(chartBounds.height * state.pixelRatio));
+        chartContext.setTransform(state.pixelRatio, 0, 0, state.pixelRatio, 0, 0);
       }
 
       function makeEnemy(index) {
@@ -362,13 +416,28 @@
         };
       }
 
-      function setEnemyCount(count, preserveSampling = false) {
+      function makeParticle(index) {
+        return {
+          x: state.random() * state.cssWidth,
+          y: state.random() * state.cssHeight,
+          radius: 0.7 + state.random() * 2.2,
+          phase: state.random() * Math.PI * 2,
+          color: index % 3,
+        };
+      }
+
+      function setEnemyCount(count, preserveSampling = false, stressMode = false) {
         if (!COUNTS.includes(count)) {
           throw new RangeError(`Unsupported enemy count: ${count}`);
         }
         state.enemyCount = count;
+        state.stressMode = stressMode;
         state.enemies = Array.from({ length: count }, (_, index) => makeEnemy(index));
+        state.particles = stressMode
+          ? Array.from({ length: 3000 }, (_, index) => makeParticle(index))
+          : [];
         countOutput.textContent = String(count);
+        particleOutput.textContent = String(state.particles.length);
         for (const button of countButtons) {
           button.setAttribute(
             'aria-pressed',
@@ -376,7 +445,7 @@
           );
         }
         if (!preserveSampling) {
-          stopSampling(`持续渲染 ${count} 个敌人；自动采样未运行。`);
+          stopSampling(`持续渲染 ${count} 个敌人${stressMode ? ' + 3000 粒子' : ''}；自动采样未运行。`);
         }
       }
 
@@ -414,6 +483,16 @@
 
           enemy.health = 0.55 + Math.sin(elapsedSeconds * 1.8 + enemy.phase) * 0.4;
         }
+
+        for (const particle of state.particles) {
+          particle.phase += deltaSeconds * 1.7;
+          particle.x += Math.cos(particle.phase) * deltaSeconds * 9;
+          particle.y += Math.sin(particle.phase * 0.83) * deltaSeconds * 7;
+          if (particle.x < 0) particle.x += state.cssWidth;
+          else if (particle.x > state.cssWidth) particle.x -= state.cssWidth;
+          if (particle.y < 0) particle.y += state.cssHeight;
+          else if (particle.y > state.cssHeight) particle.y -= state.cssHeight;
+        }
       }
 
       function draw() {
@@ -434,6 +513,24 @@
           context.lineTo(width, y);
         }
         context.stroke();
+
+        if (state.particles.length > 0) {
+          const colors = ['#6fd8ff', '#ff7d9d', '#ffd45e'];
+          context.save();
+          context.globalCompositeOperation = 'lighter';
+          context.globalAlpha = 0.55;
+          for (let color = 0; color < colors.length; color++) {
+            context.fillStyle = colors[color];
+            context.beginPath();
+            for (let i = color; i < state.particles.length; i += colors.length) {
+              const particle = state.particles[i];
+              context.moveTo(particle.x + particle.radius, particle.y);
+              context.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+            }
+            context.fill();
+          }
+          context.restore();
+        }
 
         for (const enemy of state.enemies) {
           if (enemy.elite) {
@@ -500,8 +597,11 @@
           return;
         }
         const total = times.reduce((sum, value) => sum + value, 0);
-        fpsOutput.textContent = Math.round(1000 * times.length / total).toString();
+        const fps = 1000 * times.length / total;
+        fpsOutput.textContent = Math.round(fps).toString();
         p95Output.textContent = `${percentile(times, 0.95).toFixed(1)} ms`;
+        state.fpsHistory.push(fps);
+        if (state.fpsHistory.length > 180) state.fpsHistory.shift();
 
         if (performance.memory) {
           heapOutput.textContent = `${
@@ -510,22 +610,70 @@
         }
       }
 
-      function beginScenario(count) {
-        setEnemyCount(count, true);
+      function drawFpsChart() {
+        const width = chartCanvas.width / state.pixelRatio;
+        const height = chartCanvas.height / state.pixelRatio;
+        chartContext.fillStyle = '#07111f';
+        chartContext.fillRect(0, 0, width, height);
+
+        chartContext.lineWidth = 1;
+        chartContext.font = '10px ui-monospace, monospace';
+        chartContext.textAlign = 'left';
+        chartContext.textBaseline = 'bottom';
+        for (const fps of [30, 60]) {
+          const y = height - (fps / 75) * height;
+          chartContext.strokeStyle = fps === 60
+            ? 'rgba(101,223,160,0.62)'
+            : 'rgba(255,212,94,0.28)';
+          chartContext.beginPath();
+          chartContext.moveTo(0, y + 0.5);
+          chartContext.lineTo(width, y + 0.5);
+          chartContext.stroke();
+          chartContext.fillStyle = fps === 60 ? '#65dfa0' : '#a7b6c8';
+          chartContext.fillText(String(fps), 4, y - 2);
+        }
+
+        if (state.fpsHistory.length < 2) return;
+        chartContext.strokeStyle = '#72c7ff';
+        chartContext.lineWidth = 2;
+        chartContext.beginPath();
+        for (let i = 0; i < state.fpsHistory.length; i++) {
+          const x = (i / Math.max(1, state.fpsHistory.length - 1)) * width;
+          const y = height - (Math.min(75, state.fpsHistory[i]) / 75) * height;
+          if (i === 0) chartContext.moveTo(x, y);
+          else chartContext.lineTo(x, y);
+        }
+        chartContext.stroke();
+      }
+
+      function beginScenario(scenario) {
+        const count = typeof scenario === 'number' ? scenario : scenario.count;
+        const stress = typeof scenario === 'object' && !!scenario.stress;
+        setEnemyCount(count, true, stress);
         state.sample = {
           count,
+          stress,
           phase: 'warmup',
           phaseStartedAt: performance.now(),
           frameTimes: [],
         };
-        statusOutput.textContent = `${count} 敌人：预热 ${(
+        statusOutput.textContent = `${stress ? '500 敌人 + 3000 粒子压测' : `${count} 敌人`}：预热 ${(
           WARMUP_MS / 1000
         ).toFixed(1)} 秒…`;
       }
 
       function runAllScenarios() {
         state.results = [];
-        state.queue = [...COUNTS];
+        state.queue = COUNTS.map((count) => ({ count, stress: false }));
+        document.body.dataset.benchmarkComplete = 'false';
+        renderResults();
+        beginScenario(state.queue.shift());
+      }
+
+      function runStressScenario() {
+        state.results = [];
+        state.queue = [{ count: 500, stress: true }];
+        document.body.dataset.benchmarkComplete = 'false';
         renderResults();
         beginScenario(state.queue.shift());
       }
@@ -548,7 +696,7 @@
             sample.phase = 'measure';
             sample.phaseStartedAt = timestamp;
             sample.frameTimes = [];
-            statusOutput.textContent = `${sample.count} 敌人：采样 ${(
+            statusOutput.textContent = `${sample.stress ? '500 敌人 + 3000 粒子压测' : `${sample.count} 敌人`}：采样 ${(
               SAMPLE_MS / 1000
             ).toFixed(1)} 秒…`;
           }
@@ -568,6 +716,7 @@
         const p99FrameTime = percentile(sample.frameTimes, 0.99);
         state.results.push({
           count: sample.count,
+          stress: sample.stress,
           averageFps: totalTime > 0
             ? 1000 * sample.frameTimes.length / totalTime
             : 0,
@@ -575,6 +724,7 @@
           p95FrameTime,
           longFrames: sample.frameTimes.filter((value) => value > 50).length,
           frames: sample.frameTimes.length,
+          particles: state.particles.length,
           pixels: `${canvas.width}×${canvas.height}`,
         });
         renderResults();
@@ -583,25 +733,30 @@
           beginScenario(state.queue.shift());
         } else {
           state.sample = null;
-          statusOutput.textContent = '三组采样完成。比较结果时请保持相同窗口尺寸和设备状态。';
+          window.__benchmarkResults = state.results.map((result) => ({ ...result }));
+          document.body.dataset.benchmarkComplete = 'true';
+          statusOutput.textContent = sample.stress
+            ? '500 敌人压测完成。FPS 图表保留最近 180 个采样点。'
+            : '三组采样完成。比较结果时请保持相同窗口尺寸和设备状态。';
         }
       }
 
       function renderResults() {
         if (state.results.length === 0) {
-          resultsBody.innerHTML = '<tr><td class="empty" colspan="7">等待采样结果…</td></tr>';
+          resultsBody.innerHTML = '<tr><td class="empty" colspan="8">等待采样结果…</td></tr>';
           return;
         }
 
         resultsBody.replaceChildren(...state.results.map((result) => {
           const row = document.createElement('tr');
           const values = [
-            `${result.count} 敌人`,
+            result.stress ? '500 敌人压测' : `${result.count} 敌人`,
             result.averageFps.toFixed(1),
             result.lowFps.toFixed(1),
             `${result.p95FrameTime.toFixed(1)} ms`,
             String(result.longFrames),
             String(result.frames),
+            String(result.particles),
             result.pixels,
           ];
           for (const value of values) {
@@ -629,6 +784,11 @@
             }
           }
           advanceSample(timestamp, rawFrameTime);
+          if (timestamp - state.lastChartAt >= 250) {
+            state.lastChartAt = timestamp;
+            updateLiveStats();
+            drawFpsChart();
+          }
         }
 
         requestAnimationFrame(frame);
@@ -653,6 +813,7 @@
         });
       }
       document.querySelector('#run-all').addEventListener('click', runAllScenarios);
+      document.querySelector('#run-stress').addEventListener('click', runStressScenario);
       document.querySelector('#stop').addEventListener('click', () => stopSampling());
       canvas.addEventListener('pointerdown', (event) => {
         canvas.setPointerCapture(event.pointerId);
@@ -688,10 +849,17 @@
       resizeObserver.observe(arena);
       resizeCanvas();
       setEnemyCount(100);
-      window.setInterval(updateLiveStats, 500);
+      drawFpsChart();
       requestAnimationFrame(frame);
 
-      if (params.get('autorun') === '1') {
+      window.__benchmark = {
+        runAll: runAllScenarios,
+        runStress: runStressScenario,
+        stop: stopSampling,
+      };
+      if (params.get('stress') === '1') {
+        runStressScenario();
+      } else if (params.get('autorun') === '1') {
         runAllScenarios();
       }
     })();
