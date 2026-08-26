@@ -1,3 +1,4 @@
+<!-- 模型 slug: gpt-5.6-sol-xhigh-fast -->
 <!doctype html>
 <html lang="zh-CN">
 <head>
@@ -279,6 +280,7 @@
       <button type="button" class="primary" id="run-all">依次测试</button>
       <button type="button" class="danger" id="run-stress">500 敌人压测</button>
       <button type="button" class="danger" id="stop">停止采样</button>
+      <button type="button" id="export-report" disabled>导出最终报告</button>
     </div>
   </header>
 
@@ -342,6 +344,7 @@
       const statusOutput = document.querySelector('#status');
       const resultsBody = document.querySelector('#results');
       const countButtons = [...document.querySelectorAll('[data-enemy-count]')];
+      const exportButton = document.querySelector('#export-report');
 
       const state = {
         cssWidth: 1,
@@ -358,6 +361,7 @@
         sample: null,
         queue: [],
         results: [],
+        completedAt: null,
         pointer: { x: 0, y: 0, active: false },
         random: createRandom(0x5eed1234),
       };
@@ -664,16 +668,20 @@
 
       function runAllScenarios() {
         state.results = [];
+        state.completedAt = null;
         state.queue = COUNTS.map((count) => ({ count, stress: false }));
         document.body.dataset.benchmarkComplete = 'false';
+        exportButton.disabled = true;
         renderResults();
         beginScenario(state.queue.shift());
       }
 
       function runStressScenario() {
         state.results = [];
+        state.completedAt = null;
         state.queue = [{ count: 500, stress: true }];
         document.body.dataset.benchmarkComplete = 'false';
+        exportButton.disabled = true;
         renderResults();
         beginScenario(state.queue.shift());
       }
@@ -733,12 +741,81 @@
           beginScenario(state.queue.shift());
         } else {
           state.sample = null;
+          state.completedAt = new Date().toISOString();
           window.__benchmarkResults = state.results.map((result) => ({ ...result }));
           document.body.dataset.benchmarkComplete = 'true';
+          exportButton.disabled = false;
           statusOutput.textContent = sample.stress
             ? '500 敌人压测完成。FPS 图表保留最近 180 个采样点。'
             : '三组采样完成。比较结果时请保持相同窗口尺寸和设备状态。';
         }
+      }
+
+      /**
+       * 生成可归档、可机读的最终压测报告。性能受设备影响，因此报告保留原始
+       * 指标和目标线，不把单台机器的结果硬编码成跨设备的 PASS / FAIL。
+       */
+      function buildFinalReport() {
+        const results = state.results.map((result) => ({ ...result }));
+        const averageFpsValues = results.map((result) => result.averageFps);
+        const p95Values = results.map((result) => result.p95FrameTime);
+        return {
+          schemaVersion: 1,
+          modelSlug: 'gpt-5.6-sol-xhigh-fast',
+          title: 'Egg Agent Survivor Round 3 最终压测报告',
+          generatedAt: state.completedAt || new Date().toISOString(),
+          complete: document.body.dataset.benchmarkComplete === 'true',
+          environment: {
+            userAgent: navigator.userAgent,
+            viewport: `${state.cssWidth}×${state.cssHeight}`,
+            canvasPixels: `${canvas.width}×${canvas.height}`,
+            devicePixelRatio: state.pixelRatio,
+            jsHeapBytes: performance.memory
+              ? performance.memory.usedJSHeapSize
+              : null,
+          },
+          configuration: {
+            warmupMs: WARMUP_MS,
+            sampleMs: SAMPLE_MS,
+            targetFps: 60,
+            longFrameThresholdMs: 50,
+            enemyCounts: [...COUNTS],
+            stressParticles: 3000,
+          },
+          summary: {
+            scenarioCount: results.length,
+            minimumAverageFps: results.length ? Math.min(...averageFpsValues) : null,
+            maximumP95FrameTimeMs: results.length ? Math.max(...p95Values) : null,
+            totalLongFrames: results.reduce(
+              (total, result) => total + result.longFrames,
+              0,
+            ),
+          },
+          results,
+        };
+      }
+
+      function downloadFinalReport() {
+        if (state.results.length === 0) {
+          statusOutput.textContent = '请先完成“依次测试”或“500 敌人压测”，再导出报告。';
+          return false;
+        }
+        const report = buildFinalReport();
+        const blob = new Blob(
+          [`${JSON.stringify(report, null, 2)}\n`],
+          { type: 'application/json;charset=utf-8' },
+        );
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const stamp = report.generatedAt.replace(/[:.]/g, '-');
+        link.href = url;
+        link.download = `egg-agent-survivor-round3-benchmark-${stamp}.json`;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        statusOutput.textContent = `最终压测报告已导出（${report.summary.scenarioCount} 个场景）。`;
+        return true;
       }
 
       function renderResults() {
@@ -815,6 +892,7 @@
       document.querySelector('#run-all').addEventListener('click', runAllScenarios);
       document.querySelector('#run-stress').addEventListener('click', runStressScenario);
       document.querySelector('#stop').addEventListener('click', () => stopSampling());
+      exportButton.addEventListener('click', downloadFinalReport);
       canvas.addEventListener('pointerdown', (event) => {
         canvas.setPointerCapture(event.pointerId);
         updatePointer(event);
@@ -856,6 +934,8 @@
         runAll: runAllScenarios,
         runStress: runStressScenario,
         stop: stopSampling,
+        exportReport: buildFinalReport,
+        downloadReport: downloadFinalReport,
       };
       if (params.get('stress') === '1') {
         runStressScenario();
