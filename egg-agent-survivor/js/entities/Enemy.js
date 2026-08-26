@@ -238,6 +238,23 @@
       behavior: bossBehavior,
       drawBody: drawBossShape,
     },
+
+    /*
+     * 万蛋之皇：15 分钟通关战的最终 Boss（Round 3）。
+     * 复用蛋皇的阶段机与处决 QTE，但体型、血量、伤害全面加码；
+     * isFinal 标记供胜利条件检测识别「这只死了才算通关」。
+     */
+    finalBoss: {
+      key: 'finalBoss', name: '万蛋之皇·终焉',
+      health: 7200, speed: 55, damage: 34, radius: 66, xp: 800,
+      armor: 8, kbResist: 0.97, mass: 18, contactCooldown: 0.9,
+      color: '#ffd45e', accent: '#ff4d6d',
+      isBoss: true,
+      isFinal: true,
+      canExecute: true,
+      behavior: bossBehavior,
+      drawBody: drawBossShape,
+    },
   };
 
   /** 精英词缀：叠加在基础类型上 */
@@ -555,6 +572,7 @@
     }
 
     get isBoss() { return !!this.def.isBoss; }
+    get isFinalBoss() { return !!this.def.isFinal; }
     get isAlive() { return !this.dead && this.health > 0; }
     get healthPercent() { return MathUtils.clamp(this.health / this.maxHealth, 0, 1); }
     /** 出生保护期结束前不参与接触伤害；处决窗口里 Boss 也咬不动人 */

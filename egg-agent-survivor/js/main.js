@@ -8,6 +8,11 @@
   const { GameState } = global.GameEngine;
   const MathUtils = global.MathUtils;
 
+  /** 通关时刻：撑满 15 分钟（且最终 Boss 已被击杀）即胜利 */
+  const VICTORY_TIME = 15 * 60;
+  /** 最终 Boss 出场时刻：终局前 60 秒，给玩家一场有仪式感的收官战 */
+  const FINAL_BOSS_AT = VICTORY_TIME - 60;
+
   class Game {
     constructor() {
       this.canvas = document.getElementById('game-canvas');
@@ -32,6 +37,11 @@
         weapons: this.weaponSystem,
       }));
 
+      // 元素融合（R2）装饰武器与升级两套系统，必须在两者注册之后装配
+      this.fusion = global.ElementFusion
+        ? this.engine.addSystem(new global.ElementFusion({ weapons: this.weaponSystem }))
+        : null;
+
       // 反馈层排在战斗系统之后：这一帧的击杀先结算完，再决定怎么演。
       // ComboSystem 必须早于 JuiceSystem 注册，否则击杀爆炸读到的是上一档倍率。
       this.combo = this.engine.addSystem(new global.ComboSystem());
@@ -41,9 +51,16 @@
 
       this.hud = new global.HUD(this.engine);
       this.engine.hud = this.hud;
+      this.victoryScreen = new global.VictoryScreen();
 
       this.pendingLevelUps = 0;
       this.bestTime = Number(localStorage.getItem('eas:bestTime') || 0);
+      this.victoryCount = Number(localStorage.getItem('eas:victories') || 0);
+      this.selectedCharacter = loadCharacterPref();
+
+      // 胜利流程（Round 3）：最终 Boss 与 15 分钟通关的判定状态
+      this.victoryDelay = 1100;       // 胜利演出缓冲（毫秒）；测试可置 0 走同步路径
+      this._resetVictoryFlow();
 
       this._cacheDom();
       this._bindUi();
@@ -68,6 +85,7 @@
           [GameState.PAUSED]: byId('screen-pause'),
           [GameState.LEVELUP]: byId('screen-levelup'),
           [GameState.DEAD]: byId('screen-gameover'),
+          [GameState.VICTORY]: byId('screen-victory'),
         },
         hud: byId('hud'),
         cards: byId('upgrade-cards'),
@@ -89,9 +107,14 @@
         muteGlyph: byId('mute-glyph'),
         btnReroll: byId('btn-reroll'),
         rerollCount: byId('reroll-count'),
+        roster: byId('character-select'),
+        recipes: byId('evolution-recipes'),
+        btnVictoryAgain: byId('btn-victory-again'),
+        btnVictoryMenu: byId('btn-victory-menu'),
       };
       this._renderBest();
       this._renderMute();
+      this._renderRoster();
     }
 
     _bindUi() {
@@ -112,6 +135,65 @@
       on(d.btnPause, () => this.engine.togglePause());
       if (d.btnMute) on(d.btnMute, () => this.toggleMute());
       if (d.btnReroll) on(d.btnReroll, () => this._rerollCards());
+      if (d.btnVictoryAgain) on(d.btnVictoryAgain, () => this.startRun());
+      if (d.btnVictoryMenu) on(d.btnVictoryMenu, () => this.toMenu());
+    }
+
+    /* ================= 角色选择 ================= */
+
+    /** 把 Player.CHARACTERS 渲染成主菜单的 4 张角色卡 */
+    _renderRoster() {
+      const container = this.dom.roster;
+      if (!container || !global.Player) return;
+      container.innerHTML = '';
+      this._rosterCards = [];
+
+      for (const character of global.Player.CHARACTERS) {
+        const weaponDef = global.WEAPONS ? global.WEAPONS[character.weapon] : null;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'roster__card';
+        button.dataset.character = character.id;
+        button.setAttribute('aria-label', `${character.name} · ${character.role}`);
+        button.innerHTML = `
+          <span class="roster__icon">${character.icon}</span>
+          <span class="roster__name">${character.name}</span>
+          <span class="roster__role">${character.role}</span>
+          <span class="roster__weapon">${weaponDef ? `${weaponDef.icon} ${weaponDef.name}` : ''}</span>
+          <span class="roster__traits">${character.traits.join(' · ')}</span>
+        `;
+        button.addEventListener('click', () => {
+          this.audio.unlock('uiClick');
+          this.selectCharacter(character.id);
+        });
+        container.appendChild(button);
+        this._rosterCards.push({ id: character.id, el: button });
+      }
+      this._syncRosterSelection();
+    }
+
+    /**
+     * 选择出战角色（写入偏好，立即反映在卡片高亮上）。
+     * @returns {boolean} id 是否有效
+     */
+    selectCharacter(id) {
+      if (!global.Player.CHARACTERS.some((c) => c.id === id)) return false;
+      if (this.selectedCharacter !== id) {
+        this.selectedCharacter = id;
+        try {
+          localStorage.setItem('eas:character', id);
+        } catch (_) { /* 隐私模式下 localStorage 可能不可用 */ }
+        this.audio.play('uiSelect');
+      }
+      this._syncRosterSelection();
+      return true;
+    }
+
+    _syncRosterSelection() {
+      if (!this._rosterCards) return;
+      for (const card of this._rosterCards) {
+        card.el.classList.toggle('is-selected', card.id === this.selectedCharacter);
+      }
     }
 
     /* ================= 音效 ================= */
@@ -140,11 +222,26 @@
     _bindEngineEvents() {
       const engine = this.engine;
 
-      engine.events.on('state:change', ({ to }) => this._syncScreens(to));
+      engine.events.on('state:change', ({ to }) => {
+        this._syncScreens(to);
+        // 暂停面板兼作进化图鉴：每次打开都重画一次配方进度
+        if (to === GameState.PAUSED) this.upgrades.renderRecipes(this.dom.recipes);
+      });
 
       engine.events.on('player:levelup', ({ levels }) => {
         this.pendingLevelUps += levels;
         if (engine.state === GameState.PLAYING) this._openLevelUp();
+      });
+
+      // 胜利条件的一半：最终 Boss 被击杀。另一半（15 分钟）在 _updateVictoryFlow 里查。
+      engine.events.on('wave:finalBoss', () => {
+        this.finalBossSpawnAt = engine.elapsed;
+      });
+      engine.events.on('enemy:died', (enemy) => {
+        if (enemy && enemy.isFinalBoss) {
+          this.finalBossDown = true;
+          this.finalBossKillAt = engine.elapsed;
+        }
       });
 
       engine.events.on('player:died', () => {
@@ -173,12 +270,18 @@
 
     startRun() {
       const engine = this.engine;
+      const character = global.Player.getCharacter(this.selectedCharacter);
+
+      // 初始武器由所选角色决定；必须先于 resetWorld，WeaponSystem.reset 会立刻装上它
+      this.weaponSystem.startingWeapon = character.weapon;
+
       engine.resetWorld();
       this.upgrades.reset();
       this.pendingLevelUps = 0;
       this.menuActor = null;
+      this._resetVictoryFlow();
 
-      const player = new global.Player(0, 0);
+      const player = new global.Player(0, 0, character.id);
       engine.player = player;
       engine.addImmediate(player);
       engine.camera.follow(player, true);
@@ -187,12 +290,92 @@
       engine.particles.shockwave(0, 0, { size: 20, endSize: 260, color: '#7cf9ff', life: 0.7 });
 
       engine.setState(GameState.PLAYING);
-      this.hud.showBanner('生存下去，特工', '任务开始');
+      this.hud.showBanner(`特工·${character.name} 出击`, '任务开始');
     }
 
     toMenu() {
       this.engine.setState(GameState.MENU);
       this._showMenuScene();
+    }
+
+    /* ================= 胜利流程（Round 3） ================= */
+
+    _resetVictoryFlow() {
+      this.finalBossSpawned = false;
+      this.finalBossDown = false;
+      this.finalBossSpawnAt = null;
+      this.finalBossKillAt = null;
+      this._victoryPending = false;
+    }
+
+    /** 胜利条件是否已全部满足：撑满 15 分钟 + 最终 Boss 已被击杀 */
+    checkVictory() {
+      return this.finalBossDown && this.engine.elapsed >= VICTORY_TIME;
+    }
+
+    /**
+     * 每帧驱动的胜利状态机：
+     *   1. 到达 FINAL_BOSS_AT 时刻 → 召唤最终 Boss（一局只召一次）；
+     *   2. 双条件满足 → 缓冲一拍让击杀演出播完，再切 VICTORY 结算。
+     * 只在 PLAYING 下推进，DEAD/LEVELUP 等状态由各自的守卫兜底。
+     */
+    _updateVictoryFlow() {
+      const engine = this.engine;
+      if (engine.state !== GameState.PLAYING) return;
+      if (!engine.player || !engine.player.isAlive) return;
+
+      if (!this.finalBossSpawned && engine.elapsed >= FINAL_BOSS_AT) {
+        this.finalBossSpawned = true;
+        this.spawner.spawnFinalBoss();
+      }
+
+      if (!this._victoryPending && this.checkVictory()) {
+        this._victoryPending = true;
+        const finish = () => {
+          // 死亡结算可能抢先：只有仍在战斗/选卡时才能宣布胜利
+          if (!engine.isState(GameState.PLAYING, GameState.LEVELUP)) return;
+          this.pendingLevelUps = 0;
+          this._currentChoices = null;
+          this._recordVictory();
+          engine.setState(GameState.VICTORY);
+        };
+        if (this.victoryDelay > 0) setTimeout(finish, this.victoryDelay);
+        else finish();
+      }
+    }
+
+    /** 汇总本局统计，交给 VictoryScreen 渲染结算与评级 */
+    _recordVictory() {
+      const engine = this.engine;
+      const player = engine.player;
+      const character = player.character || global.Player.getCharacter(this.selectedCharacter);
+
+      const stats = {
+        timeSeconds: engine.elapsed,
+        level: player.level,
+        kills: player.kills,
+        bestCombo: this.combo.best,
+        score: this.combo.score,
+        healthPercent: player.healthPercent,
+        bossClearSeconds: (this.finalBossSpawnAt !== null && this.finalBossKillAt !== null)
+          ? this.finalBossKillAt - this.finalBossSpawnAt
+          : Infinity,
+        characterName: character ? `${character.icon} ${character.name}` : '—',
+      };
+
+      this.lastVictory = this.victoryScreen.show(stats);
+      this.victoryCount++;
+
+      if (engine.elapsed > this.bestTime) this.bestTime = engine.elapsed;
+      try {
+        localStorage.setItem('eas:bestTime', String(this.bestTime));
+        localStorage.setItem('eas:victories', String(this.victoryCount));
+      } catch (_) { /* 隐私模式下 localStorage 可能不可用 */ }
+      this._renderBest();
+
+      this.audio.play('levelup');
+      engine.events.emit('victory:achieved', { stats, rating: this.lastVictory });
+      return this.lastVictory;
     }
 
     /** 菜单里的待机场景：一只自己绕圈的蛋，纯装饰 */
@@ -316,11 +499,13 @@
 
       if (input.wasPressed('mute')) this.toggleMute();
 
+      this._updateVictoryFlow();
+
       if (engine.state === GameState.MENU && input.wasPressed('confirm')) {
         this.startRun();
       }
 
-      if (engine.state === GameState.DEAD && input.wasPressed('confirm')) {
+      if (engine.isState(GameState.DEAD, GameState.VICTORY) && input.wasPressed('confirm')) {
         this.startRun();
       }
 
@@ -341,6 +526,15 @@
     }
   }
 
+  /** 角色偏好；未存过或 id 已失效时退回默认角色 */
+  function loadCharacterPref() {
+    try {
+      const stored = localStorage.getItem('eas:character');
+      if (stored && global.Player.CHARACTERS.some((c) => c.id === stored)) return stored;
+    } catch (_) { /* 隐私模式下 localStorage 可能不可用 */ }
+    return global.Player.DEFAULT_CHARACTER;
+  }
+
   /** 音量与静音偏好；隐私模式下 localStorage 会抛错，静默退回默认值 */
   function loadAudioPrefs() {
     const prefs = { volume: 0.75, muted: false };
@@ -355,6 +549,10 @@
     } catch (_) { /* 忽略，用默认值 */ }
     return prefs;
   }
+
+  Game.VICTORY_TIME = VICTORY_TIME;
+  Game.FINAL_BOSS_AT = FINAL_BOSS_AT;
+  global.Game = Game;
 
   const boot = () => {
     try {

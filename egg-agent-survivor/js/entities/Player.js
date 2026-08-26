@@ -32,11 +32,85 @@
   const INVULN_ON_DASH = 0.22;
   const TRAIL_INTERVAL = 0.028;
 
+  /**
+   * 可选角色（Round 3 主菜单角色选择）。
+   * 每个角色 = 初始武器 + 一组声明式属性修正（add 先于 mul 结算）。
+   * traits 是给菜单卡片看的文案，statMods 才是唯一的数值事实来源。
+   */
+  const CHARACTERS = [
+    {
+      id: 'nova',
+      name: '新星',
+      codename: 'AGENT NOVA',
+      icon: '✷',
+      role: '均衡输出',
+      weapon: 'magicBolt',
+      desc: '标准制式特工，自动索敌魔法弹开局，属性全面无短板。',
+      traits: ['属性均衡', '魔法弹起手'],
+      statMods: [],
+    },
+    {
+      id: 'aegis',
+      name: '壁垒',
+      codename: 'AGENT AEGIS',
+      icon: '▣',
+      role: '重装坦克',
+      weapon: 'frostNova',
+      desc: '加厚合金蛋壳，霜爆冲击解围。跑不快，但也砸不碎。',
+      traits: ['生命 +60', '护甲 +3', '回复 +0.45/s', '移速 −14%'],
+      statMods: [
+        { stat: 'maxHealth', add: 60 },
+        { stat: 'armor', add: 3 },
+        { stat: 'regen', add: 0.45 },
+        { stat: 'speed', mul: 0.86 },
+      ],
+    },
+    {
+      id: 'gale',
+      name: '疾风',
+      codename: 'AGENT GALE',
+      icon: '➢',
+      role: '高速游击',
+      weapon: 'boomerang',
+      desc: '轻量化蛋壳换来极限机动，靠走位与回旋镖放风筝。',
+      traits: ['移速 +20%', '冲刺冷却 −38%', '生命 −25'],
+      statMods: [
+        { stat: 'speed', mul: 1.2 },
+        { stat: 'dashCooldown', mul: 0.62 },
+        { stat: 'maxHealth', add: -25 },
+      ],
+    },
+    {
+      id: 'blaze',
+      name: '燎原',
+      codename: 'AGENT BLAZE',
+      icon: '♨',
+      role: '狂热输出',
+      weapon: 'flamethrower',
+      desc: '拆掉安全阀的火力狂人，火焰喷射开局，越烧越旺。',
+      traits: ['伤害 +20%', '冷却 −6%', '生命 −15'],
+      statMods: [
+        { stat: 'damageMultiplier', add: 0.2 },
+        { stat: 'cooldownMultiplier', add: -0.06 },
+        { stat: 'maxHealth', add: -15 },
+      ],
+    },
+  ];
+
+  const DEFAULT_CHARACTER = CHARACTERS[0].id;
+
   class Player extends global.Entity {
-    constructor(x = 0, y = 0) {
+    /**
+     * @param {number} x
+     * @param {number} y
+     * @param {string} [characterId] 可选角色 id，缺省为均衡型「新星」
+     */
+    constructor(x = 0, y = 0, characterId = DEFAULT_CHARACTER) {
       super(x, y, { radius: 19, tag: 'player', layer: global.Layer.ACTOR });
 
       this.stats = Object.assign({}, BASE_STATS);
+      this.character = Player.applyCharacter(this.stats, characterId);
+      this.characterId = this.character.id;
       this.health = this.stats.maxHealth;
 
       this.level = 1;
@@ -65,6 +139,29 @@
     /** 升级曲线：前期快、后期稳步拉长 */
     static xpRequiredFor(level) {
       return Math.floor(9 + level * 7 + Math.pow(level, 1.85));
+    }
+
+    /** 按 id 查角色定义；未知 id 落回默认角色 */
+    static getCharacter(id) {
+      return CHARACTERS.find((c) => c.id === id) || CHARACTERS[0];
+    }
+
+    /**
+     * 把角色的属性修正应用到一份 stats 上（原地修改）。
+     * add 先于 mul 结算；maxHealth 至少保留 30，避免修正叠出脆皮到开局即死。
+     * @param {object} stats 形如 BASE_STATS 的属性表
+     * @param {string} characterId
+     * @returns {object} 命中的角色定义
+     */
+    static applyCharacter(stats, characterId) {
+      const character = Player.getCharacter(characterId);
+      for (const mod of character.statMods) {
+        if (stats[mod.stat] === undefined) continue;
+        if (mod.add !== undefined) stats[mod.stat] += mod.add;
+        if (mod.mul !== undefined) stats[mod.stat] *= mod.mul;
+      }
+      stats.maxHealth = Math.max(30, stats.maxHealth);
+      return character;
     }
 
     get healthPercent() { return MathUtils.clamp(this.health / this.stats.maxHealth, 0, 1); }
@@ -322,6 +419,7 @@
 
     reset(x = 0, y = 0) {
       this.stats = Object.assign({}, BASE_STATS);
+      this.character = Player.applyCharacter(this.stats, this.characterId);
       this.position.set(x, y);
       this.velocity.set(0, 0);
       this.knockback.set(0, 0);
@@ -497,5 +595,7 @@
   }
 
   Player.BASE_STATS = BASE_STATS;
+  Player.CHARACTERS = CHARACTERS;
+  Player.DEFAULT_CHARACTER = DEFAULT_CHARACTER;
   global.Player = Player;
 })(window);

@@ -16,14 +16,18 @@
     PAUSED: 'paused',
     LEVELUP: 'levelup',
     DEAD: 'dead',
+    VICTORY: 'victory',
   });
 
   const VALID_TRANSITIONS = {
     [GameState.MENU]: [GameState.PLAYING],
-    [GameState.PLAYING]: [GameState.PAUSED, GameState.LEVELUP, GameState.DEAD, GameState.MENU],
+    [GameState.PLAYING]: [GameState.PAUSED, GameState.LEVELUP, GameState.DEAD,
+      GameState.MENU, GameState.VICTORY],
     [GameState.PAUSED]: [GameState.PLAYING, GameState.MENU],
-    [GameState.LEVELUP]: [GameState.PLAYING, GameState.MENU, GameState.DEAD],
+    // 升级面板挂起时也可能结算胜负（例如选卡瞬间 Boss 死亡演出结束）
+    [GameState.LEVELUP]: [GameState.PLAYING, GameState.MENU, GameState.DEAD, GameState.VICTORY],
     [GameState.DEAD]: [GameState.MENU, GameState.PLAYING],
+    [GameState.VICTORY]: [GameState.MENU, GameState.PLAYING],
   };
 
   /** 渲染层级：数值越大越靠上 */

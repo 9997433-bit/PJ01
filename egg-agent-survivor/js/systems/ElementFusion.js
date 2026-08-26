@@ -1647,7 +1647,12 @@
 
         const cards = fusion.buildFusionCards().filter((c) => !this.banished.has(c.id));
         if (cards.length && picked.length) {
-          picked[picked.length - 1] = MathUtils.pick(cards);
+          // 从后往前找可覆盖的槽位：进化卡（R3）同样是保底里程碑，不能被顶掉
+          for (let i = picked.length - 1; i >= 0; i--) {
+            if (picked[i].kind === 'evolution') continue;
+            picked[i] = MathUtils.pick(cards);
+            break;
+          }
         }
         return picked;
       };
