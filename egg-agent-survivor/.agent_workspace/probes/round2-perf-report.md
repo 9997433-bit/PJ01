@@ -69,7 +69,8 @@ http://127.0.0.1:4173/tests/benchmark.html?stress=1&warmup=1500&duration=5000
 - `npm run probe`：9/9 通过；
 - 改动的 JavaScript 均通过 `node --check`；
 - 500 + 3000 独立压测无浏览器异常；
-- Node 全套测试首次运行有一个依赖随机战斗结果的既有用例波动，单独重跑
+- Node 串行全套测试为 38 通过、0 失败、2 TODO；
+- 默认并发全套测试有一个依赖随机战斗结果的既有用例波动，单独重跑
   `tests/boot.test.js` 为 6/6 通过。
 
 独立 500 敌人压测已达到 60 FPS。完整满武器/Boss 场景在当前无头
