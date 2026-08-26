@@ -156,6 +156,11 @@
     render() {
       const body = this.el.body;
       if (!body) return '';
+      // areaMultiplier / critChance 这些扩展属性由 WeaponSystem 在首帧补齐，
+      // 而面板可能在首帧之前就被打开，这里先兜一次底
+      if (this.engine.player && global.WeaponSystem) {
+        global.WeaponSystem.ensureCombatStats(this.engine.player);
+      }
       const html = this._summary()
         + this._weapons()
         + this._elements()

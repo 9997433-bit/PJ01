@@ -352,7 +352,7 @@
 
         const level = document.createElement('span');
         level.className = 'weapon__level';
-        level.textContent = data.level;
+        level.textContent = String(data.level);
 
         node.appendChild(cooldown);
         node.appendChild(icon);
