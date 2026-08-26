@@ -304,6 +304,8 @@
         timeRatio: this.timeRatio,
         feverProgress: this.feverProgress,
         feverRatio: this.feverRatio,
+        feverTimeLeft: Math.max(0, this.feverTimer),
+        feverAt: this.feverAt,
         fever: this.fever,
         pulse: this._pulse,
       };
