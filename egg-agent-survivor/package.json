@@ -1,0 +1,13 @@
+{
+  "name": "egg-agent-survivor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A browser-based roguelike survival shooter.",
+  "scripts": {
+    "dev": "python3 -m http.server 3000 --bind 0.0.0.0",
+    "probe": "node scripts/probe.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
