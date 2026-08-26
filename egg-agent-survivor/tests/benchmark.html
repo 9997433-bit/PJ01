@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Egg Agent Survivor — 敌人渲染基准</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #07111f;
+      color: #eaf2ff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      overscroll-behavior: none;
+    }
+
+    body {
+      display: grid;
+      grid-template-rows: auto minmax(340px, 1fr) auto;
+      min-height: 100vh;
+      min-height: 100dvh;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(48, 105, 190, 0.24), transparent 42%),
+        #07111f;
+    }
+
+    header,
+    footer {
+      padding: 14px clamp(14px, 3vw, 28px);
+      background: rgba(8, 20, 36, 0.92);
+      backdrop-filter: blur(14px);
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: minmax(210px, 1fr) auto;
+      gap: 14px 24px;
+      align-items: center;
+      border-bottom: 1px solid rgba(139, 186, 255, 0.16);
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: clamp(17px, 2.4vw, 24px);
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle,
+    .hint {
+      margin: 0;
+      color: #9fb2ca;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    button {
+      min-height: 40px;
+      padding: 8px 13px;
+      border: 1px solid rgba(144, 187, 248, 0.25);
+      border-radius: 10px;
+      background: #12243b;
+      color: #dfeeff;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    button:hover {
+      border-color: #72b8ff;
+      background: #17304e;
+    }
+
+    button:focus-visible {
+      outline: 3px solid rgba(91, 187, 255, 0.48);
+      outline-offset: 2px;
+    }
+
+    button[aria-pressed="true"],
+    button.primary {
+      border-color: #46c4ff;
+      background: linear-gradient(135deg, #1166b7, #178aaf);
+      color: white;
+    }
+
+    button.danger {
+      border-color: rgba(255, 118, 137, 0.38);
+      color: #ffc3cc;
+    }
+
+    main {
+      position: relative;
+      min-height: 340px;
+      overflow: hidden;
+      isolation: isolate;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 340px;
+      touch-action: none;
+      background: #091827;
+    }
+
+    .stats {
+      position: absolute;
+      z-index: 2;
+      top: 14px;
+      left: 14px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(76px, 1fr));
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .stat {
+      min-width: 82px;
+      padding: 9px 11px;
+      border: 1px solid rgba(142, 190, 255, 0.17);
+      border-radius: 11px;
+      background: rgba(6, 15, 27, 0.78);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(10px);
+    }
+
+    .stat span {
+      display: block;
+      margin-bottom: 2px;
+      color: #8da6c2;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .stat strong {
+      display: block;
+      color: #f2f8ff;
+      font-size: 18px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .status {
+      position: absolute;
+      z-index: 2;
+      right: 14px;
+      bottom: 14px;
+      max-width: min(420px, calc(100% - 28px));
+      padding: 9px 12px;
+      border: 1px solid rgba(142, 190, 255, 0.18);
+      border-radius: 10px;
+      background: rgba(6, 15, 27, 0.8);
+      color: #bdcde0;
+      font-size: 12px;
+      pointer-events: none;
+    }
+
+    footer {
+      overflow-x: auto;
+      border-top: 1px solid rgba(139, 186, 255, 0.16);
+    }
+
+    table {
+      width: 100%;
+      min-width: 620px;
+      border-collapse: collapse;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    th,
+    td {
+      padding: 7px 10px;
+      border-bottom: 1px solid rgba(139, 186, 255, 0.1);
+      text-align: right;
+    }
+
+    th:first-child,
+    td:first-child {
+      text-align: left;
+    }
+
+    th {
+      color: #8fa7c3;
+      font-weight: 600;
+    }
+
+    .empty {
+      color: #7287a0;
+      text-align: center !important;
+    }
+
+    @media (max-width: 720px) {
+      header {
+        grid-template-columns: 1fr;
+      }
+
+      .controls {
+        justify-content: flex-start;
+      }
+
+      .stats {
+        right: 10px;
+        left: 10px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .stat {
+        min-width: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>敌人渲染性能基准</h1>
+      <p class="subtitle">独立 Canvas 2D 探针；不加载游戏资源或第三方依赖。</p>
+    </div>
+    <div class="controls" aria-label="基准控制">
+      <button type="button" data-enemy-count="100" aria-pressed="true">100 敌人</button>
+      <button type="button" data-enemy-count="300" aria-pressed="false">300 敌人</button>
+      <button type="button" data-enemy-count="500" aria-pressed="false">500 敌人</button>
+      <button type="button" class="primary" id="run-all">依次测试</button>
+      <button type="button" class="danger" id="stop">停止采样</button>
+    </div>
+  </header>
+
+  <main id="arena">
+    <canvas id="benchmark-canvas" aria-label="敌人渲染性能测试画布"></canvas>
+    <section class="stats" aria-live="polite">
+      <div class="stat"><span>实时 FPS</span><strong id="fps">--</strong></div>
+      <div class="stat"><span>敌人数</span><strong id="enemy-count">100</strong></div>
+      <div class="stat"><span>P95 帧耗时</span><strong id="p95">--</strong></div>
+      <div class="stat"><span>JS Heap</span><strong id="heap">N/A</strong></div>
+    </section>
+    <div class="status" id="status">持续渲染中。选择敌人数，或点击“依次测试”生成可比较结果。</div>
+  </main>
+
+  <footer>
+    <table>
+      <thead>
+        <tr>
+          <th>场景</th>
+          <th>平均 FPS</th>
+          <th>1% Low FPS</th>
+          <th>P95 帧耗时</th>
+          <th>卡顿帧 &gt; 50ms</th>
+          <th>采样帧数</th>
+          <th>画布像素</th>
+        </tr>
+      </thead>
+      <tbody id="results">
+        <tr><td class="empty" colspan="7">尚未运行完整采样</td></tr>
+      </tbody>
+    </table>
+    <p class="hint">
+      自动测试默认预热 1.5 秒、每组采样 5 秒。后台标签页会暂停采样；结果受设备刷新率与浏览器节流策略影响。
+    </p>
+  </footer>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const COUNTS = [100, 300, 500];
+      const params = new URLSearchParams(window.location.search);
+      const WARMUP_MS = clampNumber(params.get('warmup'), 1500, 250, 10000);
+      const SAMPLE_MS = clampNumber(params.get('duration'), 5000, 1000, 60000);
+      const canvas = document.querySelector('#benchmark-canvas');
+      const arena = document.querySelector('#arena');
+      const context = canvas.getContext('2d', { alpha: false, desynchronized: true });
+      const fpsOutput = document.querySelector('#fps');
+      const countOutput = document.querySelector('#enemy-count');
+      const p95Output = document.querySelector('#p95');
+      const heapOutput = document.querySelector('#heap');
+      const statusOutput = document.querySelector('#status');
+      const resultsBody = document.querySelector('#results');
+      const countButtons = [...document.querySelectorAll('[data-enemy-count]')];
+
+      const state = {
+        cssWidth: 1,
+        cssHeight: 1,
+        pixelRatio: 1,
+        enemies: [],
+        enemyCount: 100,
+        lastFrameAt: 0,
+        rollingFrameTimes: [],
+        sample: null,
+        queue: [],
+        results: [],
+        pointer: { x: 0, y: 0, active: false },
+        random: createRandom(0x5eed1234),
+      };
+
+      function clampNumber(rawValue, fallback, minimum, maximum) {
+        const parsed = Number(rawValue);
+        return Number.isFinite(parsed)
+          ? Math.min(maximum, Math.max(minimum, parsed))
+          : fallback;
+      }
+
+      function createRandom(seed) {
+        let value = seed >>> 0;
+        return () => {
+          value ^= value << 13;
+          value ^= value >>> 17;
+          value ^= value << 5;
+          return (value >>> 0) / 4294967296;
+        };
+      }
+
+      function resizeCanvas() {
+        const bounds = arena.getBoundingClientRect();
+        state.cssWidth = Math.max(1, Math.round(bounds.width));
+        state.cssHeight = Math.max(1, Math.round(bounds.height));
+        state.pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.max(1, Math.round(state.cssWidth * state.pixelRatio));
+        canvas.height = Math.max(1, Math.round(state.cssHeight * state.pixelRatio));
+        context.setTransform(
+          state.pixelRatio,
+          0,
+          0,
+          state.pixelRatio,
+          0,
+          0,
+        );
+      }
+
+      function makeEnemy(index) {
+        const radius = 4 + state.random() * 5;
+        const angle = state.random() * Math.PI * 2;
+        const speed = 18 + state.random() * 54;
+        return {
+          x: radius + state.random() * Math.max(1, state.cssWidth - radius * 2),
+          y: radius + state.random() * Math.max(1, state.cssHeight - radius * 2),
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          radius,
+          health: 0.2 + state.random() * 0.8,
+          phase: state.random() * Math.PI * 2,
+          elite: index % 25 === 0,
+        };
+      }
+
+      function setEnemyCount(count, preserveSampling = false) {
+        if (!COUNTS.includes(count)) {
+          throw new RangeError(`Unsupported enemy count: ${count}`);
+        }
+        state.enemyCount = count;
+        state.enemies = Array.from({ length: count }, (_, index) => makeEnemy(index));
+        countOutput.textContent = String(count);
+        for (const button of countButtons) {
+          button.setAttribute(
+            'aria-pressed',
+            String(Number(button.dataset.enemyCount) === count),
+          );
+        }
+        if (!preserveSampling) {
+          stopSampling(`持续渲染 ${count} 个敌人；自动采样未运行。`);
+        }
+      }
+
+      function update(deltaSeconds, elapsedSeconds) {
+        const pointerForce = state.pointer.active ? 32 : 0;
+
+        for (const enemy of state.enemies) {
+          if (pointerForce) {
+            const dx = state.pointer.x - enemy.x;
+            const dy = state.pointer.y - enemy.y;
+            const distanceSquared = Math.max(100, dx * dx + dy * dy);
+            const inverseDistance = 1 / Math.sqrt(distanceSquared);
+            enemy.vx += dx * inverseDistance * pointerForce * deltaSeconds;
+            enemy.vy += dy * inverseDistance * pointerForce * deltaSeconds;
+          }
+
+          enemy.x += enemy.vx * deltaSeconds;
+          enemy.y += enemy.vy * deltaSeconds;
+
+          if (enemy.x < enemy.radius) {
+            enemy.x = enemy.radius;
+            enemy.vx = Math.abs(enemy.vx);
+          } else if (enemy.x > state.cssWidth - enemy.radius) {
+            enemy.x = state.cssWidth - enemy.radius;
+            enemy.vx = -Math.abs(enemy.vx);
+          }
+
+          if (enemy.y < enemy.radius) {
+            enemy.y = enemy.radius;
+            enemy.vy = Math.abs(enemy.vy);
+          } else if (enemy.y > state.cssHeight - enemy.radius) {
+            enemy.y = state.cssHeight - enemy.radius;
+            enemy.vy = -Math.abs(enemy.vy);
+          }
+
+          enemy.health = 0.55 + Math.sin(elapsedSeconds * 1.8 + enemy.phase) * 0.4;
+        }
+      }
+
+      function draw() {
+        const width = state.cssWidth;
+        const height = state.cssHeight;
+        context.fillStyle = '#091827';
+        context.fillRect(0, 0, width, height);
+
+        context.strokeStyle = 'rgba(88, 137, 180, 0.1)';
+        context.lineWidth = 1;
+        context.beginPath();
+        for (let x = 0.5; x < width; x += 48) {
+          context.moveTo(x, 0);
+          context.lineTo(x, height);
+        }
+        for (let y = 0.5; y < height; y += 48) {
+          context.moveTo(0, y);
+          context.lineTo(width, y);
+        }
+        context.stroke();
+
+        for (const enemy of state.enemies) {
+          if (enemy.elite) {
+            context.beginPath();
+            context.arc(enemy.x, enemy.y, enemy.radius + 3, 0, Math.PI * 2);
+            context.fillStyle = 'rgba(255, 190, 68, 0.28)';
+            context.fill();
+          }
+
+          const gradient = context.createRadialGradient(
+            enemy.x - enemy.radius * 0.35,
+            enemy.y - enemy.radius * 0.35,
+            0,
+            enemy.x,
+            enemy.y,
+            enemy.radius,
+          );
+          gradient.addColorStop(0, enemy.elite ? '#ffe18a' : '#ff9da8');
+          gradient.addColorStop(1, enemy.elite ? '#f29b38' : '#d94b68');
+          context.beginPath();
+          context.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+          context.fillStyle = gradient;
+          context.fill();
+
+          const barWidth = enemy.radius * 2;
+          const barY = enemy.y - enemy.radius - 4;
+          context.fillStyle = 'rgba(3, 9, 15, 0.8)';
+          context.fillRect(enemy.x - enemy.radius, barY, barWidth, 2);
+          context.fillStyle = enemy.health > 0.35 ? '#65dfa0' : '#ff5f70';
+          context.fillRect(
+            enemy.x - enemy.radius,
+            barY,
+            barWidth * enemy.health,
+            2,
+          );
+        }
+
+        const playerX = state.pointer.active ? state.pointer.x : width / 2;
+        const playerY = state.pointer.active ? state.pointer.y : height / 2;
+        context.beginPath();
+        context.arc(playerX, playerY, 11, 0, Math.PI * 2);
+        context.fillStyle = '#67c9ff';
+        context.fill();
+        context.strokeStyle = 'rgba(179, 230, 255, 0.8)';
+        context.lineWidth = 2;
+        context.stroke();
+      }
+
+      function percentile(values, fraction) {
+        if (values.length === 0) {
+          return 0;
+        }
+        const sorted = [...values].sort((a, b) => a - b);
+        const index = Math.min(
+          sorted.length - 1,
+          Math.ceil(sorted.length * fraction) - 1,
+        );
+        return sorted[Math.max(0, index)];
+      }
+
+      function updateLiveStats() {
+        const times = state.rollingFrameTimes;
+        if (times.length === 0) {
+          return;
+        }
+        const total = times.reduce((sum, value) => sum + value, 0);
+        fpsOutput.textContent = Math.round(1000 * times.length / total).toString();
+        p95Output.textContent = `${percentile(times, 0.95).toFixed(1)} ms`;
+
+        if (performance.memory) {
+          heapOutput.textContent = `${
+            (performance.memory.usedJSHeapSize / (1024 * 1024)).toFixed(1)
+          } MB`;
+        }
+      }
+
+      function beginScenario(count) {
+        setEnemyCount(count, true);
+        state.sample = {
+          count,
+          phase: 'warmup',
+          phaseStartedAt: performance.now(),
+          frameTimes: [],
+        };
+        statusOutput.textContent = `${count} 敌人：预热 ${(
+          WARMUP_MS / 1000
+        ).toFixed(1)} 秒…`;
+      }
+
+      function runAllScenarios() {
+        state.results = [];
+        state.queue = [...COUNTS];
+        renderResults();
+        beginScenario(state.queue.shift());
+      }
+
+      function stopSampling(message = '采样已停止；动画继续运行。') {
+        state.queue = [];
+        state.sample = null;
+        statusOutput.textContent = message;
+      }
+
+      function advanceSample(timestamp, frameTime) {
+        const sample = state.sample;
+        if (!sample) {
+          return;
+        }
+
+        const elapsed = timestamp - sample.phaseStartedAt;
+        if (sample.phase === 'warmup') {
+          if (elapsed >= WARMUP_MS) {
+            sample.phase = 'measure';
+            sample.phaseStartedAt = timestamp;
+            sample.frameTimes = [];
+            statusOutput.textContent = `${sample.count} 敌人：采样 ${(
+              SAMPLE_MS / 1000
+            ).toFixed(1)} 秒…`;
+          }
+          return;
+        }
+
+        if (frameTime > 0 && frameTime < 1000) {
+          sample.frameTimes.push(frameTime);
+        }
+
+        if (elapsed < SAMPLE_MS) {
+          return;
+        }
+
+        const totalTime = sample.frameTimes.reduce((sum, value) => sum + value, 0);
+        const p95FrameTime = percentile(sample.frameTimes, 0.95);
+        const p99FrameTime = percentile(sample.frameTimes, 0.99);
+        state.results.push({
+          count: sample.count,
+          averageFps: totalTime > 0
+            ? 1000 * sample.frameTimes.length / totalTime
+            : 0,
+          lowFps: p99FrameTime > 0 ? 1000 / p99FrameTime : 0,
+          p95FrameTime,
+          longFrames: sample.frameTimes.filter((value) => value > 50).length,
+          frames: sample.frameTimes.length,
+          pixels: `${canvas.width}×${canvas.height}`,
+        });
+        renderResults();
+
+        if (state.queue.length > 0) {
+          beginScenario(state.queue.shift());
+        } else {
+          state.sample = null;
+          statusOutput.textContent = '三组采样完成。比较结果时请保持相同窗口尺寸和设备状态。';
+        }
+      }
+
+      function renderResults() {
+        if (state.results.length === 0) {
+          resultsBody.innerHTML = '<tr><td class="empty" colspan="7">等待采样结果…</td></tr>';
+          return;
+        }
+
+        resultsBody.replaceChildren(...state.results.map((result) => {
+          const row = document.createElement('tr');
+          const values = [
+            `${result.count} 敌人`,
+            result.averageFps.toFixed(1),
+            result.lowFps.toFixed(1),
+            `${result.p95FrameTime.toFixed(1)} ms`,
+            String(result.longFrames),
+            String(result.frames),
+            result.pixels,
+          ];
+          for (const value of values) {
+            const cell = document.createElement('td');
+            cell.textContent = value;
+            row.append(cell);
+          }
+          return row;
+        }));
+      }
+
+      function frame(timestamp) {
+        const rawFrameTime = state.lastFrameAt ? timestamp - state.lastFrameAt : 0;
+        state.lastFrameAt = timestamp;
+
+        if (!document.hidden) {
+          const deltaSeconds = Math.min(rawFrameTime / 1000, 0.05);
+          update(deltaSeconds, timestamp / 1000);
+          draw();
+
+          if (rawFrameTime > 0 && rawFrameTime < 1000) {
+            state.rollingFrameTimes.push(rawFrameTime);
+            if (state.rollingFrameTimes.length > 120) {
+              state.rollingFrameTimes.shift();
+            }
+          }
+          advanceSample(timestamp, rawFrameTime);
+        }
+
+        requestAnimationFrame(frame);
+      }
+
+      function updatePointer(event) {
+        const bounds = canvas.getBoundingClientRect();
+        state.pointer.x = Math.min(
+          state.cssWidth,
+          Math.max(0, event.clientX - bounds.left),
+        );
+        state.pointer.y = Math.min(
+          state.cssHeight,
+          Math.max(0, event.clientY - bounds.top),
+        );
+        state.pointer.active = true;
+      }
+
+      for (const button of countButtons) {
+        button.addEventListener('click', () => {
+          setEnemyCount(Number(button.dataset.enemyCount));
+        });
+      }
+      document.querySelector('#run-all').addEventListener('click', runAllScenarios);
+      document.querySelector('#stop').addEventListener('click', () => stopSampling());
+      canvas.addEventListener('pointerdown', (event) => {
+        canvas.setPointerCapture(event.pointerId);
+        updatePointer(event);
+      });
+      canvas.addEventListener('pointermove', (event) => {
+        if (event.buttons !== 0 || event.pointerType === 'touch') {
+          updatePointer(event);
+        }
+      });
+      canvas.addEventListener('pointerup', (event) => {
+        if (canvas.hasPointerCapture(event.pointerId)) {
+          canvas.releasePointerCapture(event.pointerId);
+        }
+        state.pointer.active = false;
+      });
+      canvas.addEventListener('pointercancel', () => {
+        state.pointer.active = false;
+      });
+      document.addEventListener('visibilitychange', () => {
+        state.lastFrameAt = 0;
+        if (document.hidden && state.sample) {
+          stopSampling('标签页进入后台，采样已取消以避免浏览器节流污染结果。');
+        }
+      });
+      window.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          stopSampling();
+        }
+      });
+
+      const resizeObserver = new ResizeObserver(resizeCanvas);
+      resizeObserver.observe(arena);
+      resizeCanvas();
+      setEnemyCount(100);
+      window.setInterval(updateLiveStats, 500);
+      requestAnimationFrame(frame);
+
+      if (params.get('autorun') === '1') {
+        runAllScenarios();
+      }
+    })();
+  </script>
+</body>
+</html>
