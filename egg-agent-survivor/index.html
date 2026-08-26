@@ -107,10 +107,17 @@
   </div>
 
   <!-- ===== 主菜单 ===== -->
-  <section id="screen-menu" class="screen is-visible">
+  <section id="screen-menu" class="screen screen--menu is-visible">
     <div class="screen__glow"></div>
+    <!-- 开场：一道自上而下的扫描 + 一次成型白闪，每次进菜单重放 -->
+    <div class="menu-boot" aria-hidden="true">
+      <span class="menu-boot__scan"></span>
+      <span class="menu-boot__flash"></span>
+    </div>
+
     <div class="menu">
-      <p class="menu__eyebrow">NEON PROTOCOL · 001</p>
+      <div class="menu__info">
+      <p class="menu__eyebrow"><span class="menu__pip"></span>NEON PROTOCOL · 001</p>
       <h1 class="title">
         <span class="title__line title__line--main">EGG AGENT</span>
         <span class="title__line title__line--sub">SURVIVOR</span>
@@ -122,8 +129,9 @@
         <span class="menu__best-value" id="menu-best">--:--</span>
       </div>
 
-      <button id="btn-start" class="btn btn--primary" type="button">
-        <span>开始任务</span>
+      <button id="btn-start" class="btn btn--primary btn--hero" type="button">
+        <span class="btn__chevron" aria-hidden="true"></span>
+        <span class="btn__label">开始任务</span>
         <em>ENTER</em>
       </button>
 
@@ -137,6 +145,24 @@
         <li><kbd>触摸</kbd><span>拖动屏幕即摇杆</span></li>
       </ul>
       <p class="menu__hint">武器全自动开火 · 你只需要活下来</p>
+      </div>
+
+      <!-- 角色预览台：画的是真正的 Player 实体，不是另做一张贴图 -->
+      <div class="stage" aria-hidden="true">
+        <div class="stage__frame">
+          <canvas id="preview-canvas" class="stage__canvas"></canvas>
+          <span class="stage__corner stage__corner--tl"></span>
+          <span class="stage__corner stage__corner--tr"></span>
+          <span class="stage__corner stage__corner--bl"></span>
+          <span class="stage__corner stage__corner--br"></span>
+          <span class="stage__sweep"></span>
+        </div>
+        <div class="stage__readout">
+          <span class="stage__row"><b>UNIT</b><i>EGG-01</i></span>
+          <span class="stage__row"><b>SHELL</b><i>INTACT</i></span>
+          <span class="stage__row"><b>STATUS</b><i class="is-live">READY</i></span>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -262,6 +288,7 @@
 <!-- 界面与入口 -->
 <script src="js/ui/HUD.js"></script>
 <script src="js/ui/BuildOverview.js"></script>
+<script src="js/ui/MenuStage.js"></script>
 <script src="js/ui/OffscreenIndicator.js"></script>
 <script src="js/main.js"></script>
 </body>

@@ -49,6 +49,11 @@
       this.buildOverview = new global.BuildOverview(this.engine);
       this.engine.buildOverview = this.buildOverview;
 
+      // 主菜单的角色预览台：独立小画布，只在菜单状态下按帧驱动
+      this.menuStage = global.MenuStage
+        ? new global.MenuStage(document.getElementById('preview-canvas'))
+        : null;
+
       this.pendingLevelUps = 0;
       this.bestTime = Number(localStorage.getItem('eas:bestTime') || 0);
 
@@ -184,6 +189,8 @@
       this.upgrades.reset();
       this.pendingLevelUps = 0;
       this.menuActor = null;
+      // 预览台离开菜单就彻底停摆，不跟战斗抢时间片
+      if (this.menuStage) this.menuStage.enabled = false;
 
       const player = new global.Player(0, 0);
       engine.player = player;
@@ -202,13 +209,20 @@
       this._showMenuScene();
     }
 
-    /** 菜单里的待机场景：一只自己绕圈的蛋，纯装饰 */
+    /**
+     * 菜单里的待机场景。
+     *
+     * 本体不画：真正露脸的是右侧预览台（MenuStage 渲染同一个 Player 类），
+     * 世界里这只蛋只留一条绕圈的拖尾，一来让相机持续漂移、深空背景的
+     * 视差跟着活起来，二来在半透明的菜单底下形成一道彗尾式的氛围光。
+     */
     _showMenuScene() {
       const engine = this.engine;
       engine.resetWorld();
 
       const idle = new global.Player(0, 0);
       idle.stats.regen = 0;
+      idle.visible = false;
       // 菜单状态下引擎不跑实体逻辑，这里手动喂一个绕圈的「输入」
       idle.update = function (dt, eng) {
         this.age += dt;
@@ -224,6 +238,25 @@
       engine.addImmediate(idle);
       engine.camera.follow(idle, true);
       this._syncScreens(GameState.MENU);
+      this._playMenuIntro();
+    }
+
+    /** 开场演出：预览台重新成型、深空从中心亮起、DOM 元素重新入场 */
+    _playMenuIntro() {
+      if (this.menuStage) {
+        this.menuStage.enabled = true;
+        this.menuStage.playIntro();
+      }
+      const background = this.engine.background;
+      if (background && background.playIntro) background.playIntro(1.6);
+
+      // 开场动画挂在菜单容器上：摘下重挂才会重放，否则浏览器认成同一次
+      const screen = this.dom && this.dom.screens && this.dom.screens[GameState.MENU];
+      if (screen && screen.classList) {
+        screen.classList.remove('is-entering');
+        void screen.offsetWidth;
+        screen.classList.add('is-entering');
+      }
     }
 
     _openLevelUp() {
@@ -313,8 +346,12 @@
       const engine = this.engine;
       const input = this.input;
 
-      if (engine.state === GameState.MENU && this.menuActor) {
-        this.menuActor.update(dt, engine);
+      if (engine.state === GameState.MENU) {
+        if (this.menuActor) this.menuActor.update(dt, engine);
+        if (this.menuStage) {
+          this.menuStage.update(dt);
+          this.menuStage.draw();
+        }
       }
 
       if (input.wasPressed('pause')) {
