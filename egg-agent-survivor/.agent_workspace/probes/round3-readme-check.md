@@ -76,3 +76,4 @@ npm run probe
 - `bash -n scripts/dev-server.sh scripts/run-benchmark.sh`：通过。
 - `package.json` JSON 解析：通过。
 - `npm run benchmark -- --help`：通过，基准启动脚本与参数转发正常。
+- 开发服务器冒烟：随机本地端口返回 HTTP 200，并成功调用 `$BROWSER` 打开同一 URL。
