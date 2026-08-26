@@ -468,6 +468,29 @@ test('attach 挂到 engine.audio 并把引擎事件接到对应音效', () => {
   assert.equal(manager.stats.played, 2, 'detach 之后不应再发声');
 });
 
+test('换用新的 AudioContext 后节流不会被旧时间戳卡死', () => {
+  const { AudioManager } = loadAudioManager();
+  const contexts = [];
+  const manager = new AudioManager({
+    AudioContext: function () {
+      const ctx = createFakeAudioContext();
+      contexts.push(ctx);
+      return ctx;
+    },
+    autoUnlock: false,
+  });
+
+  manager.unlock();
+  contexts[0].currentTime = 500;
+  assert.equal(manager.play('shoot'), true);
+
+  // 重建上下文：新时钟从 0 开始，旧时间戳落在「未来」
+  manager.dispose();
+  manager.unlock();
+  assert.equal(contexts.length, 2);
+  assert.equal(manager.play('shoot'), true, '旧时间戳不能把新上下文永久静音');
+});
+
 test('dispose 关闭上下文并摘掉解锁监听', () => {
   const { AudioManager, documentStub } = loadAudioManager();
   let ctx = null;

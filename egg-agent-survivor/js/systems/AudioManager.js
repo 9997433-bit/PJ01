@@ -588,7 +588,9 @@
       }
       this.ctx = null;
       this.master = null;
+      this._compressor = null;
       this._noiseBuffer = null;
+      this._lastPlayed.clear();
       this._voices = 0;
     }
 
@@ -648,7 +650,8 @@
 
       if (!opts.force && throttle > 0) {
         const last = this._lastPlayed.get(name);
-        if (last !== undefined && now - last < throttle) {
+        // now < last 说明换了新的 AudioContext（时钟从 0 重来），旧时间戳作废
+        if (last !== undefined && now >= last && now - last < throttle) {
           this.stats.throttled++;
           return false;
         }
