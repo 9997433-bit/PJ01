@@ -452,20 +452,41 @@ test('箭头数量受 maxArrows 限制', () => {
   assert.equal(indicator.targets.length, 3);
 });
 
-test('边缘交点始终落在内缩矩形的边界上', () => {
+test('边缘交点始终贴在内缩矩形的边界上（含上下不对称的情况）', () => {
   const { win } = createBrowserEnv();
   const edgePoint = win.OffscreenIndicator.edgePoint;
-  const halfW = 600;
-  const halfH = 320;
+  // 顶部内缩远大于底部，模拟被 HUD 顶栏挤下来的可用区域
+  const rect = { left: 42, right: 1238, top: 138, bottom: 704 };
+  const cx = 640;
+  const cy = 400;
 
-  for (let i = 0; i < 64; i++) {
-    const angle = (i / 64) * Math.PI * 2;
-    const p = edgePoint(640, 360, Math.cos(angle) * 5000, Math.sin(angle) * 5000, halfW, halfH);
-    const dx = Math.abs(p.x - 640);
-    const dy = Math.abs(p.y - 360);
-    assert.ok(dx <= halfW + 1e-6 && dy <= halfH + 1e-6, `交点 (${dx}, ${dy}) 跑出了矩形`);
-    assert.ok(Math.abs(dx - halfW) < 1e-6 || Math.abs(dy - halfH) < 1e-6, '交点必须贴在边上');
+  for (let i = 0; i < 128; i++) {
+    const angle = (i / 128) * Math.PI * 2;
+    const p = edgePoint(cx, cy, Math.cos(angle) * 5000, Math.sin(angle) * 5000, rect);
+
+    assert.ok(p.x >= rect.left - 1e-6 && p.x <= rect.right + 1e-6, `x=${p.x} 跑出矩形`);
+    assert.ok(p.y >= rect.top - 1e-6 && p.y <= rect.bottom + 1e-6, `y=${p.y} 跑出矩形`);
+
+    const onEdge = [rect.left, rect.right].some((v) => Math.abs(p.x - v) < 1e-6)
+      || [rect.top, rect.bottom].some((v) => Math.abs(p.y - v) < 1e-6);
+    assert.ok(onEdge, `交点 (${p.x}, ${p.y}) 没有贴在任何一条边上`);
   }
+});
+
+test('箭头避开 HUD 顶栏与底栏占用的区域', () => {
+  const scene = createIndicatorScene();
+  const { win, engine } = scene;
+  const indicator = new win.OffscreenIndicator();
+  indicator.onAdd(engine);
+
+  const rect = indicator._safeRect(1280, 720);
+  assert.ok(rect.top >= 100, '顶部要让开等级/计时/波次条/Boss 血条');
+  assert.ok(rect.bottom <= 720 - 60, '底部要让开血量与冲刺条');
+
+  // 竖屏小机型上按比例兜底，不能把可用区域压没
+  const narrow = indicator._safeRect(360, 640);
+  assert.ok(narrow.bottom - narrow.top > 200, `小屏可用高度只剩 ${narrow.bottom - narrow.top}`);
+  assert.ok(narrow.right - narrow.left > 150, `小屏可用宽度只剩 ${narrow.right - narrow.left}`);
 });
 
 test('绘制指示器不抛异常，且在菜单状态下静默', () => {

@@ -32,8 +32,13 @@
 
   class OffscreenIndicator {
     /**
+     * 上下内缩比左右大得多：屏幕顶部压着等级 / 计时 / 波次条 / Boss 血条，
+     * 底部压着血量与冲刺条，箭头贴着物理边缘画会被这些面板整个盖住。
+     *
      * @param {object} [options]
-     *   margin        箭头距屏幕边缘的内缩像素
+     *   margin        左右内缩像素
+     *   marginTop     顶部内缩像素（要让开 HUD 顶栏与 Boss 血条）
+     *   marginBottom  底部内缩像素
      *   maxArrows     单帧最多画几个箭头
      *   showPickups   是否指示屏外补给
      *   showPressure  是否绘制杂兵压力热区
@@ -41,6 +46,8 @@
      */
     constructor(options = {}) {
       this.margin = options.margin === undefined ? 42 : options.margin;
+      this.marginTop = options.marginTop === undefined ? 138 : options.marginTop;
+      this.marginBottom = options.marginBottom === undefined ? 96 : options.marginBottom;
       this.maxArrows = options.maxArrows === undefined ? 8 : options.maxArrows;
       this.showPickups = options.showPickups !== false;
       this.showPressure = options.showPressure !== false;
@@ -176,7 +183,9 @@
         if (weight < 1.2) continue;
 
         const angle = (bin + 0.5) / PRESSURE_BINS * TAU - Math.PI;
-        const edge = edgePoint(cx, cy, Math.cos(angle), Math.sin(angle), w / 2, h / 2);
+        // 热区铺到画布真实边缘，不受箭头的 HUD 内缩影响
+        const edge = edgePoint(cx, cy, Math.cos(angle), Math.sin(angle),
+          { left: 0, top: 0, right: w, bottom: h });
         const alpha = Math.min(0.3, weight * 0.032);
 
         const gradient = ctx.createRadialGradient(edge.x, edge.y, 0, edge.x, edge.y, reach);
@@ -195,8 +204,7 @@
       const h = engine.height;
       const cx = w / 2;
       const cy = h / 2;
-      const halfW = Math.max(20, w / 2 - this.margin);
-      const halfH = Math.max(20, h / 2 - this.margin);
+      const rect = this._safeRect(w, h);
       const player = engine.player.position;
 
       ctx.save();
@@ -213,7 +221,7 @@
         const dy = this._screen.y - cy;
         if (Math.abs(dx) < 1e-3 && Math.abs(dy) < 1e-3) continue;
 
-        const edge = edgePoint(cx, cy, dx, dy, halfW, halfH);
+        const edge = edgePoint(cx, cy, dx, dy, rect);
         const angle = Math.atan2(dy, dx);
         const style = STYLES[target.kind];
         const distance = Math.round(entity.position.distanceTo(player) / 10);
@@ -280,6 +288,19 @@
       ctx.restore();
     }
 
+    /** 箭头可用的矩形；小屏上 HUD 内缩会吃掉整个高度，所以按比例兜底 */
+    _safeRect(width, height) {
+      const top = Math.min(this.marginTop, height * 0.28);
+      const bottom = Math.min(this.marginBottom, height * 0.2);
+      const side = Math.min(this.margin, width * 0.2);
+      return {
+        left: side,
+        right: width - side,
+        top,
+        bottom: height - bottom,
+      };
+    }
+
     _drawHealthArc(ctx, radius, ratio, color) {
       ctx.save();
       ctx.lineWidth = 2.5;
@@ -315,12 +336,17 @@
     return bin < 0 ? 0 : bin >= PRESSURE_BINS ? PRESSURE_BINS - 1 : bin;
   }
 
-  /** 从中心沿 (dx,dy) 打到 halfW×halfH 矩形边框上的交点 */
-  function edgePoint(cx, cy, dx, dy, halfW, halfH) {
-    const ax = Math.abs(dx);
-    const ay = Math.abs(dy);
-    const sx = ax > 1e-6 ? halfW / ax : Infinity;
-    const sy = ay > 1e-6 ? halfH / ay : Infinity;
+  /**
+   * 从 (cx,cy) 沿 (dx,dy) 打到矩形 rect 边框上的交点。
+   * rect 用绝对边界而不是半宽半高，这样上下左右可以各自内缩不同的距离。
+   */
+  function edgePoint(cx, cy, dx, dy, rect) {
+    const sx = dx > 1e-6 ? (rect.right - cx) / dx
+      : dx < -1e-6 ? (rect.left - cx) / dx
+        : Infinity;
+    const sy = dy > 1e-6 ? (rect.bottom - cy) / dy
+      : dy < -1e-6 ? (rect.top - cy) / dy
+        : Infinity;
     const scale = Math.min(sx, sy);
     if (!Number.isFinite(scale)) return { x: cx, y: cy };
     return { x: cx + dx * scale, y: cy + dy * scale };

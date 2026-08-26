@@ -1094,18 +1094,18 @@
       ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // 按键提示：进入判定带时放大跳动
-      const promptY = -r * EXECUTE.outerRadius - 18;
+      // 按键提示贴着收缩环上沿走，环缩小时跟着往里收，始终和判定动作在一处
+      const top = Math.max(ring, bandOuter);
       const bump = inBand ? 1.15 + Math.sin(this.age * 30) * 0.12 : 1;
       ctx.globalAlpha = 0.92;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = inBand ? '#ffffff' : '#ffd45e';
       ctx.font = `900 ${Math.round(26 * bump)}px "Orbitron", "Rajdhani", system-ui, sans-serif`;
-      ctx.fillText('E', 0, promptY);
+      ctx.fillText('E', 0, -top - 22);
       ctx.font = '700 13px "Rajdhani", system-ui, sans-serif';
       ctx.fillStyle = '#dceaf7';
-      ctx.fillText('按 E 或点击处决', 0, promptY + 20);
+      ctx.fillText('按 E 或点击处决', 0, -top - 46);
 
       ctx.restore();
     }
