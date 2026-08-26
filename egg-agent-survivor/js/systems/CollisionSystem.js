@@ -225,12 +225,27 @@
             enemy.position.y - p.position.y,
             enemy.position.x - p.position.x
           );
+          // 演出层在场时由它统一出飘字，跟武器直伤的样式保持一致
+          const juice = engine.juice;
+          const combo = engine.combo;
+          if (combo) combo.pendingSource = p.weaponId || null;
+
           const dealt = enemy.takeDamage(p.damage, {
             knockback: p.knockback,
             angle,
             critical: p.critical,
+            silent: !!juice,
             source: p.weaponId,
           });
+
+          if (combo) combo.pendingSource = null;
+          if (juice && dealt > 0) {
+            juice.damageNumber(enemy.position.x, enemy.position.y - enemy.radius - 6, dealt, {
+              critical: p.critical,
+              kill: enemy.dead,
+            });
+          }
+
           if (p.burn) enemy.applyBurn(p.burn.dps, p.burn.duration);
           if (p.slow) enemy.applySlow(p.slow.mult, p.slow.duration);
           if (p.onHit) p.onHit(p, enemy, engine);

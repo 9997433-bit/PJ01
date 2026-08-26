@@ -646,6 +646,12 @@
      * 计算一次伤害（含玩家增伤与暴击）。
      * @returns {{damage:number, critical:boolean}}
      */
+    /** Fever 期间的增伤系数；ComboSystem 缺席时恒为 1 */
+    get feverDamage() {
+      const combo = this.engine && this.engine.combo;
+      return combo ? combo.damageBonus : 1;
+    }
+
     rollDamage(weapon, base) {
       const stats = this.engine.player.stats;
       let damage = base * stats.damageMultiplier;
@@ -661,18 +667,36 @@
      * 否则这里补乘一次 damageMultiplier。
      */
     dealDamage(weapon, enemy, amount, options = {}) {
-      const damage = options.preMultiplied
+      const engine = this.engine;
+      const base = options.preMultiplied
         ? amount
-        : amount * this.engine.player.stats.damageMultiplier;
+        : amount * engine.player.stats.damageMultiplier;
+      const damage = base * this.feverDamage;
+
+      // 有 JuiceSystem 时把飘字交给它统一出，配色与字号才跟暴击 / 击杀挂钩
+      const juice = engine.juice;
+      const combo = engine.combo;
+      // 连击归因：Enemy._die() 会在 takeDamage 内部同步派发 enemy:died，
+      // ComboSystem 只能靠这个字段知道这一杀该记在哪把武器头上。
+      if (combo) combo.pendingSource = weapon.id;
 
       const dealt = enemy.takeDamage(damage, {
         angle: options.angle,
         knockback: options.knockback,
         critical: options.critical,
         stun: options.stun,
-        silent: options.silent,
+        silent: options.silent || !!juice,
         source: weapon.id,
       });
+
+      if (combo) combo.pendingSource = null;
+
+      if (juice && dealt > 0 && !options.silent) {
+        juice.damageNumber(enemy.position.x, enemy.position.y - enemy.radius - 6, dealt, {
+          critical: options.critical,
+          kill: enemy.dead,
+        });
+      }
 
       weapon.damageDealt += dealt;
       this.totalDamage += dealt;
@@ -688,6 +712,9 @@
     }
 
     spawn(engine, config) {
+      // 弹道伤害在出膛时定死，Fever 加成只能在这里乘一次
+      const fever = this.feverDamage;
+      if (fever !== 1 && config.damage) config.damage *= fever;
       return engine.add(new global.Projectile(config));
     }
 
@@ -698,7 +725,9 @@
       if (!player || !player.isAlive || !engine.combat) return;
       ensureCombatStats(player);
 
-      const cooldownMultiplier = player.stats.cooldownMultiplier;
+      // Fever 期间所有武器一起提速
+      const cooldownMultiplier = player.stats.cooldownMultiplier
+        * (engine.combo ? engine.combo.cooldownScale : 1);
 
       for (let i = 0; i < this.weapons.length; i++) {
         const weapon = this.weapons[i];
