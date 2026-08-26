@@ -374,7 +374,8 @@
       this.particles.update(fxDelta);
       this.floatingText.update(fxDelta);
       this.camera.update(simulating ? dt : rawDelta);
-      if (this.background && this.background.update) this.background.update(fxDelta);
+      // 背景要读战况来切气氛（Fever / Boss / 波次），把引擎一起递进去
+      if (this.background && this.background.update) this.background.update(fxDelta, this);
 
       // updateAlways 不受状态机限制，供 HUD、背景演出等使用
       for (let i = 0; i < this.systems.length; i++) {

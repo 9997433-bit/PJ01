@@ -43,8 +43,8 @@
       + `<span class="ov-stat__value">${escapeHtml(value)}</span></div>`;
   }
 
-  function section(title, meta, body) {
-    return `<section class="ov-section">
+  function section(title, meta, body, wide) {
+    return `<section class="ov-section${wide ? ' ov-section--wide' : ''}">
       <h3 class="ov-section__title">${escapeHtml(title)}
         ${meta ? `<span class="ov-section__meta">${escapeHtml(meta)}</span>` : ''}
       </h3>
@@ -188,7 +188,7 @@
     _weapons() {
       const weapons = this.engine.weapons;
       const slots = weapons && weapons.snapshot ? weapons.snapshot() : [];
-      if (!slots.length) return section('武器', '', emptyHint('尚未装备武器'));
+      if (!slots.length) return section('武器', '', emptyHint('尚未装备武器'), true);
 
       const total = slots.reduce((sum, slot) => sum + slot.damage, 0);
       const sorted = slots.slice().sort((a, b) => b.damage - a.damage);
@@ -214,7 +214,7 @@
       }).join('');
 
       const capacity = weapons.maxSlots ? `${slots.length}/${weapons.maxSlots} 槽位` : '';
-      return section('武器', capacity, `<ul class="ov-weapons">${rows}</ul>`);
+      return section('武器', capacity, `<ul class="ov-weapons">${rows}</ul>`, true);
     }
 
     /** 元素解锁进度 + 反应统计 + 当前可执行的融合 */
@@ -255,7 +255,7 @@
       return section('元素与融合', meta, `
         <ul class="ov-elements-grid">${progress}</ul>
         ${ready}
-        ${reactions ? `<ul class="ov-reactions">${reactions}</ul>` : ''}`);
+        ${reactions ? `<ul class="ov-reactions">${reactions}</ul>` : ''}`, true);
     }
 
     _passives() {
